@@ -7,22 +7,43 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / 'dist' / 'vendor'
+SHEETJS_SHA256 = 'cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41'
+SHEETJS_PACKAGE_URL = 'https://registry.npmjs.org/@e965/xlsx/-/xlsx-0.20.3.tgz'
+
+
+def fetch(url):
+    request = urllib.request.Request(url, headers={'User-Agent': 'Bondflow-dependency-build/1.0'})
+    with urllib.request.urlopen(request, timeout=90) as response:
+        return response.read()
+
+
+def verified(content, expected, source):
+    if hashlib.sha256(content).hexdigest() != expected:
+        raise ValueError(f'Checksum mismatch for {source}')
+    return content
 
 
 def download(url, expected):
-    with urllib.request.urlopen(url, timeout=90) as response:
-        content = response.read()
-    if hashlib.sha256(content).hexdigest() != expected:
-        raise ValueError(f'Checksum mismatch for {url}')
-    return content
+    return verified(fetch(url), expected, url)
+
+
+def sheetjs_bytes():
+    # The official CDN rejects GitHub-hosted runners. This npm distribution
+    # contains the identical file; verify its original pinned digest before use.
+    content = fetch(SHEETJS_PACKAGE_URL)
+    with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
+        member = archive.getmember('package/dist/xlsx.full.min.js')
+        if not member.isfile():
+            raise ValueError('Spreadsheet library is not a regular file')
+        script = archive.extractfile(member).read()
+    return verified(script, SHEETJS_SHA256, 'SheetJS 0.20.3 xlsx.full.min.js')
 
 
 def main():
     VENDOR.mkdir(parents=True, exist_ok=True)
-    xlsx = download(
-        'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
-        'cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41')
-    (VENDOR / 'xlsx.full.min.js').write_bytes(xlsx)
+    print('Downloading and verifying SheetJS 0.20.3...', flush=True)
+    (VENDOR / 'xlsx.full.min.js').write_bytes(sheetjs_bytes())
+    print('Downloading and verifying Pyodide 0.27.7...', flush=True)
     content = download(
         'https://registry.npmjs.org/pyodide/-/pyodide-0.27.7.tgz',
         '89d5d952675eb08e11286e52c7238f1248ce71726e896db9703e73bef23dc343')
@@ -30,7 +51,6 @@ def main():
     target.mkdir(exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
         for member in archive.getmembers():
-            # Distribution contains only root-level regular files under package/.
             if member.isfile() and member.name.startswith('package/'):
                 relative = Path(member.name).relative_to('package')
                 if len(relative.parts) != 1:
