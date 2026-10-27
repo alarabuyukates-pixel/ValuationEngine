@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bondflow — Valuation Studio</title>
+<meta name="description" content="Turn Excel bond portfolios into transparent valuations and complete cash-flow workbooks. Your Python engine, in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%231a5144'/%3E%3Cpath d='M10 27V18h5v9zm8 0V10h5v17zm8 0V14h5v13z' fill='%23bcedaa'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script defer src="vendor/xlsx.full.min.js"></script><script defer src="app.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+<a class="brand" href="./"><span class="brandmark">▥</span> bondflow<span class="branddot">.</span></a>
+<div class="workspace-label">YOUR WORKSPACE</div>
+<button class="nav active" data-view="studio"><span>▦</span> Valuation studio <span class="navbadge">01</span></button>
+<button class="nav" data-view="workflow"><span>⇄</span> The workflow</button>
+<button class="nav" data-view="method"><span>⌘</span> Method & code</button>
+<div class="side-bottom"><div class="privacy-icon">◈</div><strong>Your data stays yours.</strong><p>Workbooks are processed in your browser. No portfolio uploads or storage.</p><div class="engine-pill"><i></i> Python valuation engine</div></div>
+</aside>
+<div class="shell">
+<header><div class="breadcrumb">Workspace <span>/</span> <strong id="page-label">Valuation studio</strong></div><a class="repo-link" href="https://github.com/alarabuyukates-pixel/ValuationEngine" target="_blank" rel="noopener">◉ <span>View on GitHub</span> →</a></header>
+<main>
+<section id="studio-view" class="view">
+<div class="heading"><div><div class="eyebrow">FROM SPREADSHEET TO CLARITY</div><h1>Every cash flow. <span>Accounted for.</span></h1><p>Value your fixed and floating bonds. One workbook in, a complete picture out.</p></div><span class="version">VALUATION STUDIO <b>v1.0</b></span></div>
+<div class="flow-strip" aria-label="Valuation progress">
+<div class="step current" id="step-1"><span class="step-number">1</span><div><strong>Import workbook</strong><small>Your Excel, your layout</small></div></div><span class="connector">→</span>
+<div class="step" id="step-2"><span class="step-number">2</span><div><strong>Map & review</strong><small>Connect your columns</small></div></div><span class="connector">→</span>
+<div class="step" id="step-3"><span class="step-number">3</span><div><strong>Run valuation</strong><small>Trace every payment</small></div></div><span class="connector">→</span>
+<div class="step" id="step-4"><span class="step-number">4</span><div><strong>Export results</strong><small>Ready for Excel</small></div></div>
+</div>
+<div id="notice" role="status" aria-live="polite" hidden></div>
+<div id="upload-layout" class="upload-layout">
+<section class="card import-card"><div class="card-title"><div><span class="section-tag">01 / IMPORT</span><h2>Start with your portfolio</h2></div><span class="file-badge">XLSX · XLS · CSV</span></div>
+<label id="dropzone" class="dropzone" for="file-input"><input id="file-input" type="file" accept=".xlsx,.xls,.csv"><span class="upload-icon"><svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg></span><strong>Drop your workbook here</strong><span>or <u>browse files</u> to get started</span><small>Up to 10 MB · 5,000 bonds per run</small></label>
+<div class="sample-line"><span>Just exploring?</span><button id="sample-btn" class="text-button">Try a sample portfolio <span>→</span></button></div>
+<div class="import-footer"><span>◈ &nbsp; Processed locally in your browser</span><button id="template-btn" class="text-button">Download template ↓</button></div>
+</section>
+<aside class="card includes-card"><div class="mini-chart"><span></span><span></span><span></span><span></span><span></span><i>→</i></div><span class="section-tag">A COMPLETE VALUATION</span><h2>More than a<br>present value.</h2><p>See exactly how each bond earns its value.</p><ul><li><span>✓</span> Fixed & floating rate bonds</li><li><span>✓</span> Every interest & principal payment</li><li><span>✓</span> Discount factors & payment PVs</li><li><span>✓</span> Clean price & accrued interest</li></ul><div class="excel-note"><span class="excel-icon">X</span><div><strong>One organized Excel output</strong><small>Valuations, cash flows, inputs & errors</small></div></div></aside>
+</div>
+<section id="mapping-card" class="card" hidden>
+<div class="card-title"><div><span class="section-tag">02 / MAP & REVIEW</span><h2 id="filename">Map your columns</h2></div><button id="reset-btn" class="secondary">Change file</button></div>
+<div class="controls"><label>Worksheet<select id="sheet-select"></select></label><label>Header row<input id="header-row" type="number" min="1" max="100" value="1"></label><label>Unformatted numeric rates<select id="rate-unit"><option value="points">5 means 5%</option><option value="decimal">0.05 means 5%</option></select></label><span id="row-count" class="count-chip"></span></div>
+<p class="hint">Choose a source column or enter a fallback for blank or unmapped cells. Excel percentage cells and values such as “5%” are recognized automatically. Date text must use YYYY-MM-DD.</p>
+<details class="preview-box"><summary>Preview source data</summary><div class="table-scroll" id="source-preview"></div></details>
+<div class="mapping-head"><span>ENGINE INPUT</span><span>YOUR EXCEL COLUMN</span><span>FALLBACK VALUE</span></div><div id="mapping-fields"></div>
+<div class="mapping-actions"><div><strong id="mapping-status">Ready to review</strong><small>Missing or invalid values appear as row errors. Valid bonds still run.</small></div><button id="run-btn" class="primary">Run valuation <span>→</span></button></div>
+</section>
+<section id="results-section" hidden>
+<div class="results-heading"><div><span class="section-tag">04 / RESULTS</span><h2>Your portfolio, calculated.</h2><p id="run-caption"></p></div><div class="result-actions"><button id="remap-btn" class="secondary">Edit inputs</button><button id="export-btn" class="primary">Download Excel ↓</button></div></div>
+<div class="metrics"><div class="card"><small>BONDS VALUED</small><strong id="metric-valued">0</strong><span>Successfully calculated</span></div><div class="card"><small>FUTURE PAYMENTS</small><strong id="metric-flows">0</strong><span>Interest + principal cash flows</span></div><div class="card"><small>ROWS TO REVIEW</small><strong id="metric-errors">0</strong><span>Included in your error report</span></div></div>
+<div class="card result-card"><div class="result-tabs"><button class="selected" data-result="summary">Valuations</button><button data-result="cashflows">Cash flows</button><button data-result="errors">Errors</button><label id="bond-filter-label" hidden>Bond <select id="bond-filter"></select></label></div><div id="result-table" class="table-scroll"></div><div class="table-footer" id="result-footer"></div></div>
+<div class="formula-note"><span>ƒ</span><p><strong>Present value = Σ (interest + principal) × discount factor</strong><br>Each factor converts a future payment into its value at settlement. Clean value = dirty PV − accrued interest.</p></div>
+</section>
+<div class="bottom-note"><span>BUILT FOR TRANSPARENCY</span><p>Simple term-floating and fixed bullet bonds · Flat discount & projection curves · <button class="text-button" data-view="method">View assumptions →</button></p></div>
+</section>
+<section id="workflow-view" class="view" hidden><div class="eyebrow">TRANSPARENT BY DESIGN</div><h1>Follow the flow.</h1><p class="lead">A workflow you trigger. Calculations you can inspect.</p><div id="workflow-diagram" class="workflow-diagram"></div><div class="card explanation"><h2>The same Python behind every run</h2><p>The interface reads Excel locally and sends normalized rows to a Python worker in your browser. The worker calls <code>workflow.py</code> and your <code>bond_engine.py</code>. Results return to the interface for review and Excel export.</p><p>The source package includes the application, Python engine, workflow documentation, tests, and GitHub Actions checks. The valuation itself runs when you click “Run valuation”; it does not send your portfolio to GitHub Actions.</p><a class="primary link-button" href="https://github.com/alarabuyukates-pixel/ValuationEngine" target="_blank" rel="noopener">Open GitHub repository →</a></div></section>
+<section id="method-view" class="view" hidden><div class="eyebrow">NO BLACK BOX</div><h1>Know what’s behind the number.</h1><p class="lead">Explicit conventions. Inspectable Python. Your workbook stays on your device.</p><div class="method-grid"><article class="card explanation"><h2>Cash flows & present value</h2><p>Interest = notional × annual coupon rate × period year fraction. Principal is repaid once, at maturity. Dirty PV is the sum of discounted future payments; clean PV subtracts accrued interest.</p><code>DF = exp(−r × actual days / 365)</code><p>Discount rates are flat, continuously compounded annual zero rates. Choose rates that reflect your funding and credit assumptions. This tool does not fetch live market rates.</p></article><article class="card explanation"><h2>Floating rate bonds</h2><p>The current period requires its known reference fixing, excluding spread. Future rates are simple forwards implied by the projection curve, plus spread.</p><code>Forward = (DF(start) / DF(end) − 1) / accrual</code><p>Floating forecasts change with rates. Overnight compounded SOFR/SONIA, reset lags, caps, floors, and embedded options are outside this version’s scope.</p></article><article class="card explanation"><h2>Dates & conventions</h2><p>Schedules run backward from maturity, preserve month-end, and allow a short first stub. Supported day counts: ACT/360, ACT/365F and European 30E/360.</p><p>There are no business-day or holiday adjustments. Payments on settlement are excluded. This version supports bullet bonds, without amortization, ex-coupon rules, or optionality.</p></article><article class="card explanation"><h2>Workbooks & source code</h2><p>Choose your worksheet and header row, then map columns. Required bond information must be present in the workbook or supplied as a fallback. Arbitrary spreadsheet layouts do not imply missing financial data.</p><p>Outputs include Valuations, Cash Flows, Inputs, Errors, and Run Info. Currency totals are never combined across currencies.</p><div class="source-actions"><a href="bond_engine.py" download>Python engine ↓</a><a href="workflow.py" download>Python workflow ↓</a><a href="source.zip" download>Full source ZIP ↓</a></div></article></div></section>
+</main><footer><span>bondflow<span class="branddot">.</span></span><span>Clear inputs. Traceable cash flows. Confident review.</span><span id="runtime-status">Python runs locally in your browser</span></footer>
+</div>
+</body></html>

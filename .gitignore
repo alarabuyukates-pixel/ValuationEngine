@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.env*
+node_modules/
+*.xlsx
+*.xls
+.sites-runtime/
+.sites-checkout*/
+dist/source.zip
+dist/vendor/
