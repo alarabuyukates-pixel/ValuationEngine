@@ -1,0 +1,114 @@
+{
+  "schema_version": 2,
+  "fetched_at": "2026-10-27T23:25:42.733727+00:00",
+  "refresh": {
+    "url": "https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_3M+SR_6M+SR_9M+SR_1Y+SR_2Y+SR_3Y+SR_5Y+SR_7Y+SR_10Y+SR_15Y+SR_20Y+SR_30Y?format=csvdata&lastNObservations=1",
+    "tenor_column": "DATA_TYPE_FM",
+    "date_column": "TIME_PERIOD",
+    "value_column": "OBS_VALUE",
+    "tenors": [
+      "3M",
+      "6M",
+      "9M",
+      "1Y",
+      "2Y",
+      "3Y",
+      "5Y",
+      "7Y",
+      "10Y",
+      "15Y",
+      "20Y",
+      "30Y"
+    ]
+  },
+  "curves": [
+    {
+      "id": "ECB_EUR_AAA",
+      "name": "ECB euro-area AAA government zero curve",
+      "currency": "EUR",
+      "as_of": "2026-10-26",
+      "source": "European Central Bank",
+      "source_url": "https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_3M+SR_6M+SR_9M+SR_1Y+SR_2Y+SR_3Y+SR_5Y+SR_7Y+SR_10Y+SR_15Y+SR_20Y+SR_30Y?format=csvdata&lastNObservations=1",
+      "reference_index": null,
+      "curve_type": "sovereign",
+      "compounding": "continuous",
+      "day_count": "ACT/365F",
+      "quote_time_basis": "Quoted tenor in years; DFs placed at calendar maturities",
+      "description": "AAA government-bond Svensson spot curve. Not an EURIBOR or OIS curve.",
+      "pillars": [
+        {
+          "date": "2027-01-26",
+          "discount_factor": 0.9936023805334937,
+          "quoted_zero_rate": 0.025672687755,
+          "tenor": "3M"
+        },
+        {
+          "date": "2027-04-26",
+          "discount_factor": 0.986561995102921,
+          "quoted_zero_rate": 0.027058224008,
+          "tenor": "6M"
+        },
+        {
+          "date": "2027-07-26",
+          "discount_factor": 0.9791608985908669,
+          "quoted_zero_rate": 0.028079066687999997,
+          "tenor": "9M"
+        },
+        {
+          "date": "2027-10-26",
+          "discount_factor": 0.9715853326817706,
+          "quoted_zero_rate": 0.028826178014,
+          "tenor": "1Y"
+        },
+        {
+          "date": "2028-10-26",
+          "discount_factor": 0.941286608849848,
+          "quoted_zero_rate": 0.030253803380000003,
+          "tenor": "2Y"
+        },
+        {
+          "date": "2029-10-26",
+          "discount_factor": 0.9120391728881618,
+          "quoted_zero_rate": 0.030690779034000002,
+          "tenor": "3Y"
+        },
+        {
+          "date": "2031-10-26",
+          "discount_factor": 0.855058038852846,
+          "quoted_zero_rate": 0.03131718613,
+          "tenor": "5Y"
+        },
+        {
+          "date": "2033-10-26",
+          "discount_factor": 0.797999586635571,
+          "quoted_zero_rate": 0.032235314219,
+          "tenor": "7Y"
+        },
+        {
+          "date": "2036-10-26",
+          "discount_factor": 0.713655421038985,
+          "quoted_zero_rate": 0.033735503672,
+          "tenor": "10Y"
+        },
+        {
+          "date": "2041-10-26",
+          "discount_factor": 0.586497600717633,
+          "quoted_zero_rate": 0.035572446783,
+          "tenor": "15Y"
+        },
+        {
+          "date": "2046-10-26",
+          "discount_factor": 0.48290861337223173,
+          "quoted_zero_rate": 0.036396392475,
+          "tenor": "20Y"
+        },
+        {
+          "date": "2056-10-26",
+          "discount_factor": 0.339343750744847,
+          "quoted_zero_rate": 0.036024722379,
+          "tenor": "30Y"
+        }
+      ]
+    }
+  ]
+}

@@ -2,8 +2,8 @@
 const $ = id => document.getElementById(id);
 const fields = [
   ['bond_id','Bond ID','Optional · generated if blank',['bondid','isin','id','securityid','security','name'],''],
-  ['kind','Bond type','fixed or floating',['type','kind','bondtype','ratetype'],'fixed'],
-  ['currency','Currency','Optional · reporting only, no FX conversion',['currency','ccy'],'Unspecified'],
+  ['kind','Bond type','fixed, floating or zero',['type','kind','bondtype','ratetype'],'fixed'],
+  ['currency','Currency','Required with named curves · no FX conversion',['currency','ccy'],'Unspecified'],
   ['issue','Issue date','Required · YYYY-MM-DD',['issuedate','issue','dateddate','startdate'],''],
   ['maturity','Maturity date','Required · YYYY-MM-DD',['maturitydate','maturity','enddate'],''],
   ['settlement','Settlement date','Required · YYYY-MM-DD',['settlementdate','settlement','valuationdate','asofdate'],''],
@@ -12,8 +12,13 @@ const fields = [
   ['day_count','Coupon day count','ACT/360, ACT/365F or 30E/360',['daycount','coupondaycount','daycountconvention'],'ACT/360'],
   ['coupon','Fixed coupon (%)','Required for fixed bonds',['coupon','couponrate','fixedcoupon','annualcouponrate'],''],
   ['spread','Floating spread (%)','0.5 = 50 basis points',['spread','margin','floatingspread'],'0'],
-  ['discount','Discount zero rate (%)','Required · continuously compounded',['discountrate','discountzerorate','discount','zerorate'],''],
-  ['projection','Projection zero rate (%)','Required for floating bonds',['projectionrate','projectionzerorate','projection','forwardcurverate'],''],
+  ['discount','Flat discount zero rate (%)','Only when no discount curve ID is selected',['discountrate','discountzerorate','discount','zerorate'],''],
+  ['projection','Flat projection zero rate (%)','Floating override when no projection curve ID is selected',['projectionrate','projectionzerorate','projection','forwardcurverate'],''],
+  ['discount_curve','Discount curve ID','Use a library ID, or leave blank for flat override',['discountcurve','discountcurveid'],''],
+  ['projection_curve','Projection curve ID','Floating · must match the selected index',['projectioncurve','projectioncurveid'],''],
+  ['index','Floating index','EURIBOR-1M, -3M, -6M, -12M or a custom term index',['index','floatingindex','referenceindex'],''],
+  ['index_tenor','Custom index tenor (months)','Only custom term indices; inferred for EURIBOR',['indextenor','indextenormonths'],''],
+  ['index_day_count','Index day count','EURIBOR uses ACT/360; custom defaults to coupon basis',['indexdaycount'],''],
   ['fixing','Current reference fixing (%)','Required for floating · excluding spread',['currentfixing','fixing','referencefixing','referencerate','currentreferencerate'],'']
 ];
 const rateKeys = new Set(['coupon','spread','discount','projection','fixing']);
@@ -27,24 +32,25 @@ const text = (element, value) => { element.textContent = value; return element; 
 function notify(message,error=false) { $('notice').hidden=false; $('notice').className=error?'error':''; $('notice').textContent=message; }
 function progress(stage) { for(let i=1;i<=4;i++) $('step-'+i).className='step'+(i===stage?' current':i<stage?' done':''); }
 function showView(name) {
-  for(const key of ['studio','workflow','method']) $(key+'-view').hidden=key!==name;
+  for(const key of ['studio','curves','workflow','method']) $(key+'-view').hidden=key!==name;
   document.querySelectorAll('.nav').forEach(el=>el.classList.toggle('active',el.dataset.view===name));
-  $('page-label').textContent={studio:'Valuation studio',workflow:'The workflow',method:'Method & code'}[name];
+  $('page-label').textContent={studio:'Valuation studio',curves:'Market curves',workflow:'The workflow',method:'Method & code'}[name];
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
-const nodes=[['Import','Choose a workbook, worksheet and header row.','app.js / readFile'],['Map','Connect source columns and explicit fallbacks.','app.js / normalizeRows'],['Validate','Check dates, rates, fixings and conventions.','workflow.py'],['Calculate','Generate and discount each future payment.','bond_engine.py'],['Export','Review results and download an Excel workbook.','app.js / exportResults']];
+const nodes=[['Import','Choose a workbook, worksheet and header row.','app.js / readFile'],['Map','Connect bonds, market curve IDs and index definitions.','app.js / normalizeRows'],['Validate','Check curves, index tenors, dates and fixings.','workflow.py'],['Calculate','Generate and discount each future payment.','bond_engine.py'],['Export','Review results and download an Excel workbook.','app.js / exportResults']];
 for(const [i,node] of nodes.entries()) { const div=document.createElement('div'); div.className='flow-node'; const n=document.createElement('b'); n.textContent=String(i+1).padStart(2,'0'); const title=document.createElement('strong');title.textContent=node[0];const p=document.createElement('p');p.textContent=node[1];const code=document.createElement('code');code.textContent=node[2];div.append(n,title,p,code);$('workflow-diagram').append(div); }
 
 function makeWorkbook(rows,name='Bonds') { const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),name); return wb; }
 function sampleRows() { return [
- ['Bond ID','Type','Currency','Issue date','Maturity date','Settlement date','Notional','Payments per year','Day count','Coupon %','Spread %','Discount rate %','Projection rate %','Current fixing %'],
- ['CORP-2029','fixed','EUR','2025-01-15','2029-01-15','2026-10-27',100000,2,'30E/360',4.75,'',3.8,'',''],
- ['FRN-2030','floating','EUR','2025-04-01','2030-04-01','2026-10-27',150000,4,'ACT/360','',0.75,3.8,3.25,3.4],
- ['TREAS-2031','fixed','USD','2026-03-31','2031-03-31','2026-10-27',200000,2,'ACT/365F',4.25,'',4.1,'',''] ]; }
+ ['Bond ID','Type','Currency','Issue date','Maturity date','Settlement date','Notional','Payments per year','Day count','Coupon %','Spread %','Discount rate %','Projection rate %','Current fixing %','Discount curve ID','Projection curve ID','Floating index'],
+ ['CORP-2029','fixed','EUR','2025-01-15','2029-01-15','2026-10-27',100000,2,'30E/360',4.75,'','','','','DEMO_EUR_DISC','',''],
+ ['FRN-2030','floating','EUR','2025-04-01','2030-04-01','2026-10-27',150000,4,'ACT/360','',0.75,'','',3.4,'DEMO_EUR_DISC','DEMO_EURIBOR_3M','EURIBOR-3M'],
+ ['ZERO-2028','zero','EUR','2026-10-27','2028-10-27','2026-10-27',50000,'','','','','','','','DEMO_EUR_DISC','',''] ]; }
+function demoWorkbook(){const wb=makeWorkbook(sampleRows());XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(CurveManager.demoRows()),'Curves');return wb;}
 $('template-btn').onclick=()=> {
- try { const wb=makeWorkbook(sampleRows());const notes=[['Instructions'],['Replace the example bonds with your own. One bond per row.'],['Enter 5 for 5% (or use an Excel percentage cell containing 5%).'],['Text dates must be YYYY-MM-DD. Native Excel dates are also supported.'],['Floating fixing is the current reference rate excluding spread.'],['Discount and projection rates are flat continuously compounded annual zero rates.'],['Fixed and simple term-floating bullet bonds only. No business-day adjustments.']];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(notes),'Instructions');XLSX.writeFile(wb,'bondflow-input-template.xlsx'); } catch(e) {notify(e.message,true);} };
-$('sample-btn').onclick=()=>{workbook=makeWorkbook(sampleRows());filename='sample-portfolio.xlsx';loadWorkbook();notify('Sample portfolio loaded. Review the mappings, then click Run valuation.');};
+ try { const wb=demoWorkbook();const notes=[['Instructions'],['Example curve rates are FICTIONAL demonstration values. Replace them with provider data.'],['Bonds: fixed, floating or zero (zero-coupon principal-only).'],['Mapped curve IDs take precedence over flat rate columns.'],['Set floating index explicitly. EURIBOR-3M needs 4 coupons/year; EURIBOR-6M needs 2.'],['Import dated zero rates or discount factors in Curves, with an index tag on projection curves.'],['Rate columns: 5 means 5%; native Excel percentages are also recognized.'],['Dates: YYYY-MM-DD or native Excel date cells.'],['Zero bonds need no coupon, payment frequency or coupon day count.'],['ECB sovereign AAA data is available separately in Market curves; it is not an EURIBOR curve.']];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(notes),'Instructions');XLSX.writeFile(wb,'bondflow-input-template.xlsx'); } catch(e) {notify(e.message,true);} };
+$('sample-btn').onclick=()=>{try{workbook=demoWorkbook();filename='sample-portfolio.xlsx';loadWorkbook();notify('Demonstration curves loaded (fictional rates). Review the fixed, EURIBOR-3M and zero-coupon examples, then run.');}catch(e){notify(e.message,true);}};
 async function readFile(file) {
  if(!file)return;
  if(!/\.(xlsx|xls|csv)$/i.test(file.name)) {notify('Choose an .xlsx, .xls or .csv file.',true);return;}
@@ -59,7 +65,9 @@ $('dropzone').addEventListener('drop',e=>readFile(e.dataTransfer.files[0]));
 function loadWorkbook() {
  if(!workbook.SheetNames.length)throw new Error('No worksheets found.');
  $('sheet-select').replaceChildren();
- for(const name of workbook.SheetNames) {const option=new Option(name,name);$('sheet-select').add(option);}
+ if(workbook.Sheets.Curves)CurveManager.importSheet(workbook);
+ for(const name of workbook.SheetNames.filter(n=>!['Curves','Instructions'].includes(n))) {const option=new Option(name,name);$('sheet-select').add(option);}
+ if(!$('sheet-select').options.length)throw new Error('No bond worksheet found. Upload curve-only files in Market curves.');
  $('header-row').value='1';$('upload-layout').hidden=true;$('mapping-card').hidden=false;$('results-section').hidden=true;results=null;
  $('filename').textContent=filename;progress(2);readSheet();
 }
@@ -87,7 +95,9 @@ function readSheet() {
   for(const column of columns)select.add(new Option(column.label+' ('+XLSX.utils.encode_col(column.index)+')',String(column.index)));
   const match=columns.find(c=>aliases.includes(normalize(c.label)));
   if(match)select.value=String(match.index);
-  const input=document.createElement('input');input.id='fallback-'+key;input.value=fallback;input.placeholder=dateKeys.has(key)?'YYYY-MM-DD':'No fallback';input.setAttribute('aria-label',label+' fallback');
+  const input=document.createElement('input');input.id='fallback-'+key;input.value=CurveManager.defaults()[key]||fallback;input.placeholder=dateKeys.has(key)?'YYYY-MM-DD':'No fallback';input.setAttribute('aria-label',label+' fallback');
+  if(['discount_curve','projection_curve'].includes(key))input.setAttribute('list','curve-ids');
+  if(key==='index')input.setAttribute('list','index-ids');
   row.append(lab,select,input);$('mapping-fields').append(row);
  }
  const preview=sourceRows.slice(0,5).map(r=>Object.fromEntries(columns.map(c=>[c.label+' ('+XLSX.utils.encode_col(c.index)+')',r.values[c.index]])));
@@ -129,10 +139,12 @@ function pythonRequest(rows){
 $('run-btn').onclick=async()=>{
  const controls=[...$('mapping-card').querySelectorAll('button,input,select')];
  try{
+  await CurveManager.ready;
   runInputs=normalizeRows();
+  const curveInputs=CurveManager.all();
   controls.forEach(c=>c.disabled=true);progress(3);$('run-btn').textContent='Calculating…';
   notify('Starting the Python engine and calculating cash flows. The first run may take a moment.');$('runtime-status').textContent='Python engine running locally…';
-  const started=performance.now();results=await pythonRequest(runInputs);
+  const started=performance.now();results=await pythonRequest({bonds:runInputs,curves:curveInputs});
   results.runInfo={timestamp:new Date().toISOString(),file:filename,sheet:$('sheet-select').value,header:Number($('header-row').value),seconds:((performance.now()-started)/1000).toFixed(2),rateUnit:$('rate-unit').selectedOptions[0].textContent};
   $('mapping-card').hidden=true;$('results-section').hidden=false;progress(4);
   const ok=results.summary.filter(r=>r.Status==='OK').length;
@@ -167,7 +179,7 @@ function showResults(){
  $('bond-filter-label').hidden=resultView!=='cashflows';
  let rows=results[resultView];
  if(resultView==='cashflows'&&$('bond-filter').value)rows=rows.filter(r=>String(r['Source row'])===$('bond-filter').value);
- const headers=resultView==='summary'?['Source row','Bond ID','Currency','Status','Type','Dirty PV','Accrued interest','Clean PV','Clean price / 100','Error']:undefined;
+ const headers=resultView==='summary'?['Source row','Bond ID','Currency','Status','Type','Index','Dirty PV','Accrued interest','Clean PV','Clean price / 100','Discount curve','Discount curve date','Projection curve','Warnings','Error']:undefined;
  renderTable($('result-table'),rows,headers);
  $('result-footer').textContent=`Showing ${Math.min(rows.length,500)} of ${rows.length.toLocaleString()} rows. Excel download includes every row and full precision. Amounts are in each bond’s currency; no cross-currency total is calculated.`;
 }
@@ -175,8 +187,8 @@ document.querySelectorAll('[data-result]').forEach(b=>b.onclick=()=>{resultView=
 function exportResults(){
  if(!results)return;
  const wb=XLSX.utils.book_new();
- const info=[{Setting:'Run time (UTC)',Value:results.runInfo.timestamp},{Setting:'Input file',Value:results.runInfo.file},{Setting:'Worksheet',Value:results.runInfo.sheet},{Setting:'Header row',Value:results.runInfo.header},{Setting:'Numeric input rates',Value:results.runInfo.rateUnit},{Setting:'Normalized input rates',Value:'Percentage points: 5 = 5%'},{Setting:'Valuation convention',Value:'Settlement PV; payments on settlement excluded'},{Setting:'Discount curve',Value:'Flat continuous annual zero rate, ACT/365F'},{Setting:'Floating coupons',Value:'Current fixing + spread; future simple forwards + spread'},{Setting:'Schedule',Value:'Backward from maturity; month-end preserved; short first stub; no holiday adjustments'},{Setting:'Model scope',Value:'Fixed and simple term-floating bullet bonds. No overnight compounding or embedded options.'},{Setting:'Workflow version',Value:'1.0.0'},{Setting:'Source code',Value:'https://github.com/alarabuyukates-pixel/ValuationEngine'}];
- for(const [name,rows]of [['Valuations',results.summary],['Cash Flows',results.cashflows],['Inputs',results.inputs],['Errors',results.errors.length?results.errors:[{Status:'No errors'}]],['Run Info',info]]){
+ const info=[{Setting:'Run time (UTC)',Value:results.runInfo.timestamp},{Setting:'Input file',Value:results.runInfo.file},{Setting:'Worksheet',Value:results.runInfo.sheet},{Setting:'Header row',Value:results.runInfo.header},{Setting:'Numeric input rates',Value:results.runInfo.rateUnit},{Setting:'Normalized input rates',Value:'Percentage points: 5 = 5%'},{Setting:'Valuation convention',Value:'Settlement PV; payments on settlement excluded'},{Setting:'Discount curves',Value:'Named dated curves when supplied; otherwise explicit flat continuous zero-rate overrides'},{Setting:'Floating coupons',Value:'Named term index: supplied current fixing + spread; index-specific forward projection + spread'},{Setting:'Schedule',Value:'Backward from maturity; month-end preserved; short first stub; no holiday adjustments'},{Setting:'Model scope',Value:'Fixed, zero-coupon and simple term-floating bullet bonds. No overnight compounding or embedded options.'},{Setting:'Workflow version',Value:'2.0.0'},{Setting:'Source code',Value:'https://github.com/alarabuyukates-pixel/ValuationEngine'}];
+ for(const [name,rows]of [['Valuations',results.summary],['Cash Flows',results.cashflows],['Inputs',results.inputs],['Curves',results.curves?.length?results.curves:[{Status:'Only flat overrides used; see Inputs and Valuations'}]],['Errors',results.errors.length?results.errors:[{Status:'No errors'}]],['Run Info',info]]){
   const ws=XLSX.utils.json_to_sheet(rows);
   if(ws['!ref']){const range=XLSX.utils.decode_range(ws['!ref']);ws['!autofilter']={ref:ws['!ref']};ws['!cols']=Array.from({length:range.e.c+1},()=>({wch:21}));
    const h=rows.length?Object.keys(rows[0]):[];

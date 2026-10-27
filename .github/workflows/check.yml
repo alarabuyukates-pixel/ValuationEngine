@@ -24,5 +24,6 @@ jobs:
         run: |
           node --check dist/app.js
           node --check dist/worker.js
+          node --check dist/curves.js
       - name: Verify browser Python runtime
         run: node tests/runtime.mjs

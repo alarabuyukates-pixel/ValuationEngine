@@ -21,6 +21,8 @@ jobs:
           python-version: '3.12'
       - name: Prepare pinned browser dependencies
         run: python scripts/prepare_vendor.py
+      - name: Refresh dated ECB benchmark
+        run: python scripts/refresh_market_data.py --allow-stale
       - name: Package source download
         run: python scripts/package_source.py
       - uses: actions/configure-pages@v5
