@@ -138,7 +138,7 @@ function normalizeRows(){
  });
 }
 function pythonRequest(rows){
- if(!worker){worker=new Worker('worker.js');worker.onmessage=({data})=>{const request=pending.get(data.id);if(!request)return;clearTimeout(request.timer);pending.delete(data.id);data.error?request.reject(new Error(data.error)):request.resolve(data.result);};worker.onerror=e=>{for(const request of pending.values()){clearTimeout(request.timer);request.reject(new Error(e.message||'Python worker could not start'));}pending.clear();worker.terminate();worker=null;};}
+ if(!worker){worker=new Worker('worker.js?v=2.1.1');worker.onmessage=({data})=>{const request=pending.get(data.id);if(!request)return;clearTimeout(request.timer);pending.delete(data.id);data.error?request.reject(new Error(data.error)):request.resolve(data.result);};worker.onerror=e=>{for(const request of pending.values()){clearTimeout(request.timer);request.reject(new Error(e.message||'Python worker could not start'));}pending.clear();worker.terminate();worker=null;};}
  return new Promise((resolve,reject)=>{const id=++messageId;const timer=setTimeout(()=>{worker?.terminate();worker=null;pending.delete(id);reject(new Error('Python startup or valuation timed out. Check your connection and try again.'));},120000);pending.set(id,{resolve,reject,timer});worker.postMessage({id,type:'run',rows});});
 }
 $('run-btn').onclick=async()=>{
