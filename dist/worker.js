@@ -4,7 +4,7 @@ async function boot() {
   importScripts('./vendor/pyodide/pyodide.js');
   const root = new URL('./vendor/pyodide/', self.location.href).href;
   python = await loadPyodide({ indexURL: root });
-  for (const name of ['bond_engine.py', 'workflow.py']) {
+  for (const name of ['bond_engine.py', 'mortgage_engine.py', 'workflow.py']) {
     const response = await fetch('./' + name);
     if (!response.ok) throw new Error('Could not load Python source: ' + name);
     python.FS.writeFile('/home/pyodide/' + name, await response.text());
@@ -24,3 +24,4 @@ self.onmessage = async ({data}) => {
     self.postMessage({id:data.id, error:String(error.message || error)});
   }
 };
+

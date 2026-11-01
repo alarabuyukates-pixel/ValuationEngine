@@ -1,6 +1,6 @@
-# Bondflow — Bond Valuation Studio
+# Bondflow — EUR Valuation Studio
 
-A drag-and-drop Excel interface backed by an inspectable Python engine. Value fixed-rate, simple term-floating, and zero-coupon bullet bonds using dated market curves or explicit flat-rate assumptions.
+A drag-and-drop Excel interface backed by an inspectable Python engine. Value fixed-rate, simple term-floating and zero-coupon bullet bonds, plus fixed-to-maturity mortgages. This workspace uses EUR for every instrument; explicit other currencies are rejected, never relabelled or converted.
 
 ## Try it
 
@@ -8,7 +8,7 @@ A drag-and-drop Excel interface backed by an inspectable Python engine. Value fi
 
 The original ChatGPT-hosted deployment is separate: https://bondflow-valuation-lab.alarabuyukates.chatgpt.site . Its access and publication are managed independently. Changing this repository does not automatically update that deployment.
 
-For the public site, enable **Settings → Pages → Source: GitHub Actions**, then run **Actions → Publish GitHub Pages → Run workflow → main** after code changes. GitHub collaborators with write access can update the source; publishing remains a separate workflow step.
+For the public site, enable **Settings → Pages → Source: GitHub Actions**, if not already enabled. **Actions → Publish GitHub Pages → Run workflow → main** can also publish manually. GitHub collaborators with write access can update the source. Pushes to main publish the updated calculator after validation; manual publication remains available.
 
 ### Run locally in PyCharm / Windows
 
@@ -37,9 +37,23 @@ flowchart LR
 
 The browser reads Excel with SheetJS. `app.js` normalizes bond columns, dates and rate units; `curves.js` manages curve imports and the public benchmark snapshot. `worker.js` starts the bundled Pyodide runtime, imports `workflow.py`, and calls `bond_engine.py` for each bond. Excel export happens in the browser. Workbooks and portfolio rows are not uploaded or stored by the application. Market-data refresh requests go to the public data provider without portfolio data. Google Fonts may be requested for styling.
 
+## EUR mortgage valuation (version 1)
+
+Open **Mortgage valuation** for direct entry, or set `Type = mortgage` in an Excel portfolio. Bonds and mortgages share the same Python worker, curve validation and Excel audit output.
+
+Supported repayment methods: `annuity` (equal instalments), `linear` (equal principal), and `interest-only` (principal at maturity). Enter original principal, origination, contractual maturity, settlement, fixed annual nominal rate and payments per year (1, 2, 4 or 12). Past scheduled payments are assumed paid; the engine reconstructs the balance from origination. Maturity must align with regular payment dates, preserving origination month-end without date drift. Maximum term is 50 years. No stub periods are modeled for mortgages.
+
+Periodic interest = opening balance × nominal annual rate / frequency. Annuity instalment = principal × periodic rate / (1 − (1 + periodic rate)^−number_of_payments); zero-rate instalments use principal / number_of_payments. The final repayment clears numerical residuals. Accrued interest is the current period’s interest multiplied by elapsed days / total days in that period. Payments on settlement are excluded and the balance is measured after them. Prices per 100 use **outstanding principal**, rather than the original loan amount.
+
+Select a dated EUR curve or explicit continuously compounded flat discount rate. **Discount spread bps** adds a user-defined spread to the curve: DF(payment) / DF(settlement) × exp(−spread / 10,000 × ACT/365F). Zero spread on the ECB curve means an AAA sovereign benchmark basis, not a mortgage market quote. No spread is inferred from the contract rate.
+
+The form requires confirmation that the rate is fixed through maturity and past scheduled instalments were paid. Workbook columns **Mortgage rate type** (`fixed` only) and **Fixed until** (blank = maturity, otherwise must equal maturity) can make this explicit. Mortgage-specific columns are **Repayment** and **Discount spread bps**; **Fixed rate %** is accepted as a coupon alias. Blank currency defaults to EUR. Other currencies, variable rates and earlier reset dates produce row errors.
+
+Results include outstanding principal, next instalment, clean/dirty PV, remaining payment count, and opening/closing balance per future payment, with source curve, dates and spread in Excel. No prepayment, credit/default losses, arrears, fees, insurance, rate resets, holiday adjustment or embedded options are modeled. These are positive lender asset cash flows; broader balance-sheet positions and interest-rate risk measures are future work.
+
 ## Market curves
 
-Open **Market curves** to inspect available curve IDs, currencies, source dates, reference indices and pillars. Select **Use for discounting** or, for an index-tagged curve, **Use for index projection** to set a visible fallback in the bond mappings. Mapped workbook values take precedence over those fallbacks.
+Open **Market curves** to see the yield-curve chart, exact pillar rates/discount factors, data source links and snapshot age, and inspect available curve IDs, currencies, source dates, reference indices and pillars. Select **Use for discounting** or, for an index-tagged curve, **Use for index projection** to set a visible fallback in the bond mappings. Mapped workbook values take precedence over those fallbacks.
 
 ### ECB public benchmark
 
@@ -48,6 +62,10 @@ The application includes a dated **ECB euro-area AAA government zero curve**, de
 This is an **AAA sovereign benchmark**, not an EURIBOR projection curve or a €STR OIS discount curve. A public snapshot is not a promise of real-time data. Choose a discount curve appropriate to the instrument's valuation basis, funding and credit assumptions. Older selected curves produce explicit age warnings in results.
 
 The public ECB feed does **not** provide the licensed EURIBOR forward curve or current contractual EURIBOR fixing. Supply those from your data provider, or use an explicitly selected flat projection assumption. Demonstration curves and sample fixings are fictional and are labelled accordingly.
+
+### Bloomberg / Reuters (LSEG) and provider curves
+
+This static site has no Bloomberg or LSEG API credentials and does not claim a live vendor connection. Those services require an entitled data connection and appropriate distribution rights. Provider exports can be mapped into the existing zero-rate/discount-factor template. Par swap quotes must be bootstrapped externally first. The built-in public source is the ECB, explicitly labelled as an AAA sovereign benchmark, with observation and retrieval dates.
 
 ### Import provider curves
 
@@ -96,7 +114,7 @@ The numbers above are illustrative, not market quotes. Each pillar may instead c
 
 ## Bond workbook inputs
 
-Use **Download template** for examples, or upload your own `.xlsx`, `.xls` or `.csv` file. Choose a worksheet and the row containing its headings. Common column names are mapped automatically; review them before running. One bond per data row. Maximum 10 MB / 5,000 bonds per run.
+Use **Download template** for examples, or upload your own `.xlsx`, `.xls` or `.csv` file. Choose a worksheet and the row containing its headings. Common column names are mapped automatically; review them before running. One bond per data row. Maximum 10 MB / 5,000 instruments per run.
 
 | Input | Requirement |
 |---|---|
@@ -122,7 +140,7 @@ A fallback applies to unmapped or blank cells. Named curve IDs always take prece
 
 Missing required data produces a row error while valid bonds continue. Exclude subtotals and descriptive rows from the bond table. Merged or free-form spreadsheet layouts must first be mapped into a table; the tool cannot infer missing financial terms from arbitrary documents.
 
-For bond rates, the default is **5 means 5%**. Choose **0.05 means 5%** if unformatted numeric cells hold decimal rates. Native Excel percentage cells and text such as `5%` are recognized automatically. Fallback bond rates always use percentage points (5 = 5%). Currency amounts remain separate; there is no FX conversion or mixed-currency PV total.
+For bond rates, the default is **5 means 5%**. Choose **0.05 means 5%** if unformatted numeric cells hold decimal rates. Native Excel percentage cells and text such as `5%` are recognized automatically. Fallback bond rates always use percentage points (5 = 5%). All instruments use EUR; there is no FX conversion.
 
 ## Floating-rate index conventions
 
@@ -155,7 +173,7 @@ Interest = notional × coupon rate × year fraction. Principal is repaid at matu
 
 Selected curve as-of dates must be on or before settlement, with sufficient pillar coverage for all future payments. Factors are normalized to settlement; using an older market date is reported explicitly, rather than represented as a current quote. Flat overrides are continuously compounded annual zero rates on ACT/365F.
 
-Coupon schedules run backward from maturity, preserve month-end and permit a short first stub. No holiday/business-day adjustments, ex-coupon rules, overnight compounding, amortization, caps/floors, embedded options or credit-default/recovery cash flows are modeled. Match the curve and cash-flow conventions to the bond documents before operational use.
+Coupon schedules run backward from maturity, preserve month-end and permit a short first stub. Bond engine: no holiday/business-day adjustments, ex-coupon rules, overnight compounding, amortization, caps/floors, embedded options or credit-default/recovery cash flows are modeled. Match the curve and cash-flow conventions to the bond documents before operational use.
 
 ## Source map
 
@@ -168,6 +186,8 @@ dist/
   worker.js                Browser Python worker
   workflow.py              Batch validation, curve selection and audit output
   bond_engine.py           Bond mathematics, schedules and curve interpolation
+  mortgage_engine.py       Fixed mortgage amortization, balances and PV
+  charts.js                Accessible SVG yield curve from actual input pillars
   vendor/                  Pinned SheetJS / Pyodide browser distributions
 scripts/prepare_vendor.py  Download pinned browser dependencies
 scripts/refresh_market_data.py  Refresh the official market-data snapshot
@@ -181,6 +201,7 @@ tests/                     Engine, curves, workflow and WebAssembly checks
 PYTHONPATH=dist python -m unittest discover -s tests -v
 node --check dist/app.js
 node --check dist/curves.js
+node --check dist/charts.js
 node --check dist/worker.js
 node tests/runtime.mjs
 ```
@@ -190,3 +211,4 @@ On PowerShell, set `$env:PYTHONPATH="dist"` before running `python -m unittest d
 GitHub Actions **Check valuation workflow** runs checks on pushes, pull requests or manual dispatch. It tests code and does not receive uploaded portfolios. Valuation runs in the browser, independently of GitHub credentials and server storage.
 
 Vendor notices and sources are in `THIRD_PARTY.md`. Downloadable source ZIPs exclude user workbooks and hosting identity.
+

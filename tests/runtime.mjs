@@ -3,9 +3,9 @@ import {loadPyodide} from '../dist/vendor/pyodide/pyodide.mjs';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const py = await loadPyodide();
-for(const file of ['bond_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+file,readFileSync(new URL('../dist/'+file,import.meta.url),'utf8'));
+for(const file of ['bond_engine.py','mortgage_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+file,readFileSync(new URL('../dist/'+file,import.meta.url),'utf8'));
 const payload=[{_row:2,bond_id:'FIXED',kind:'fixed',currency:'EUR',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'30E/360',coupon:5,discount:4},
-{_row:3,bond_id:'FLOAT',kind:'floating',currency:'USD',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'ACT/360',spread:.5,discount:4,projection:3.5,fixing:3},
+{_row:3,bond_id:'FLOAT',kind:'floating',currency:'EUR',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'ACT/360',spread:.5,discount:4,projection:3.5,fixing:3},
 {_row:4,bond_id:'BAD',kind:'fixed'}];
 py.globals.set('payload',JSON.stringify(payload));
 const result=JSON.parse(await py.runPythonAsync('from workflow import run_json\nrun_json(payload)'));
@@ -27,3 +27,16 @@ assert.equal(market.summary[0]['Accrued interest'],0);
 assert.equal(market.summary[1]['Index'],'EURIBOR-3M');
 assert.equal(market.curves.length,4);
 console.log('WebAssembly market curves, EURIBOR and zero-coupon workflow passed.');
+
+const mortgages={curves:[{...dated,pillars:[{date:'2047-01-01',zero_rate:.03}]}],bonds:[
+{_row:2,bond_id:'MORTGAGE-WASM',kind:'mortgage',currency:'EUR',issue:'2026-01-01',maturity:'2046-01-01',settlement:'2026-04-01',notional:300000,frequency:12,coupon:4,repayment:'annuity',discount_curve:'EUR-DISC',discount_spread_bps:50},
+{_row:3,bond_id:'UNSUPPORTED',kind:'mortgage',currency:'EUR',issue:'2026-01-01',maturity:'2046-01-01',settlement:'2026-04-01',notional:300000,frequency:12,coupon:4,rate_type:'floating'}]};
+py.globals.set('payload',JSON.stringify(mortgages));
+const mortgage=JSON.parse(await py.runPythonAsync('run_json(payload)'));
+assert.equal(mortgage.summary[0].Status,'OK');
+assert.equal(mortgage.errors.length,1);
+assert.equal(mortgage.cashflows.length,237);
+assert.equal(mortgage.cashflows.at(-1)['Closing balance'],0);
+assert.ok(mortgage.summary[0]['Outstanding principal']<300000);
+assert.ok(Math.abs(mortgage.cashflows.reduce((s,f)=>s+f.Principal,0)-mortgage.summary[0]['Outstanding principal'])<1e-6);
+console.log('WebAssembly mortgage workflow passed: balances, spread, settlement and unsupported reset.');
