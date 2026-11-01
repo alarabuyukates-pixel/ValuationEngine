@@ -96,6 +96,6 @@ window.CurveManager = (() => {
  }
  get('refresh-ecb').onclick=async()=>{const b=get('refresh-ecb');b.disabled=true;try{await ready;await refresh();}catch(e){message('Refresh failed: '+e.message+' The previously loaded curve is unchanged.',true);}finally{b.disabled=false;}};
  const ready=fetch('market-data.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('Snapshot unavailable');return r.json();}).then(data=>{snapshot=data;add(data.curves,true);}).catch(e=>{get('market-status').textContent='ECB snapshot unavailable · import your market curve';get('ecb-detail').textContent=e.message+'. You can still import provider curves or use explicit flat-rate assumptions.';});
- return {ready,all:()=>[...byId.values()],importSheet,demoRows,add,defaults:()=>({discount_curve:selectedDiscount,projection_curve:selectedProjection,index:selectedIndex,index_mode:selectedIndex?'named':'curve'})};
+ return {ready,all:()=>[...byId.values()],importSheet,demoRows,add,defaults:()=>({discount_curve:selectedDiscount,projection_curve:selectedProjection,index:selectedIndex,index_mode:selectedProjection?(selectedIndex?'named':'curve'):'named'})};
 })();
 
