@@ -14,6 +14,7 @@ window.CurveManager = (() => {
  function add(curves,official=false){
   const checked=[];const ids=new Set();
   for(const c of curves){
+   if(String(c.currency||'').toUpperCase()!=='EUR')throw new Error('This workspace supports EUR curves only.');
    if(!c.id||!c.currency||!c.as_of||!Array.isArray(c.pillars)||!c.pillars.length)throw new Error('Each curve needs an ID, currency, as-of date and pillars.');
    if(ids.has(c.id))throw new Error('Duplicate curve ID in import: '+c.id);ids.add(c.id);
    if(builtin.has(c.id)&&!official)throw new Error('Choose a different ID: '+c.id+' is reserved for the official snapshot.');
@@ -55,18 +56,21 @@ window.CurveManager = (() => {
   for(const c of all){get('curve-preview-select').add(new Option(c.id+' · '+c.as_of,c.id));const option=document.createElement('option');option.value=c.id;get('curve-ids').append(option);}
   if(byId.has(previous))get('curve-preview-select').value=previous;
   preview();
+  window.dispatchEvent(new Event('curves-updated'));
   const official=all.find(c=>builtin.has(c.id));
-  get('market-status').textContent=official?`ECB EUR AAA curve · as of ${official.as_of} · ${official.pillars.length} pillars`:'No official curve loaded · import a dated market curve';
+  get('market-status').textContent=official?`ECB EUR AAA curve · as of ${official.as_of} · ${official.pillars.length} pillars · ${Math.max(0,Math.floor((Date.now()-Date.parse(official.as_of+'T00:00:00Z'))/86400000))} calendar days old`:'No official curve loaded · import a dated market curve';
+  if(official){get('ecb-source-link').href=official.source_url;get('ecb-source-link').textContent='ECB source data ↗';}
   if(official)get('ecb-detail').textContent=`Source: ${official.source}. Market date: ${official.as_of}. Retrieved: ${snapshot.fetched_at||'not recorded'}. Coverage through ${official.pillars.at(-1).date}.`;
  }
  function preview(){
   const c=byId.get(get('curve-preview-select').value);get('use-discount-curve').disabled=!c;get('use-projection-curve').disabled=!c?.reference_index;
+  drawYieldCurve(get('curve-chart'),c);
   if(!c){get('curve-description').textContent='Import curves or refresh the ECB benchmark.';get('curve-pillars').replaceChildren();return;}
   get('curve-description').textContent=`${c.id} · ${c.currency} · ${c.compounding} · ${c.day_count} · source: ${c.source}. Curve date must not be after settlement. Older curves produce an age warning in results.`;
   table(get('curve-pillars'),c.pillars.map(p=>({'Pillar date':p.date,'Zero rate %':(p.zero_rate??p.quoted_zero_rate)===undefined?'—':((p.zero_rate??p.quoted_zero_rate)*100).toFixed(6),'Discount factor':p.discount_factor===undefined?'—':Number(p.discount_factor).toFixed(10)})));
  }
  get('curve-preview-select').onchange=preview;
- get('use-discount-curve').onclick=()=>{selectedDiscount=get('curve-preview-select').value;if(get('fallback-discount_curve'))get('fallback-discount_curve').value=selectedDiscount;message('Discount fallback set to '+selectedDiscount+'. Open Valuation studio to load or value your bonds.');};
+ get('use-discount-curve').onclick=()=>{selectedDiscount=get('curve-preview-select').value;if(get('fallback-discount_curve'))get('fallback-discount_curve').value=selectedDiscount;message('Discount fallback set to '+selectedDiscount+'. Open Valuation studio to load your EUR portfolio. Mortgage form has its own discount selection.');};
  get('use-projection-curve').onclick=()=>{const c=byId.get(get('curve-preview-select').value);if(!c?.reference_index)return;selectedProjection=c.id;selectedIndex=c.reference_index;if(get('fallback-projection_curve'))get('fallback-projection_curve').value=c.id;if(get('fallback-index'))get('fallback-index').value=c.reference_index;message('Projection fallback set to '+c.id+' for '+c.reference_index+'. Existing mapped columns take precedence.');};
  get('clear-imports').onclick=()=>{for(const id of byId.keys())if(!builtin.has(id))byId.delete(id);selectedDiscount='';selectedProjection='';selectedIndex='';render();message('Imported and demonstration curves cleared.');};
  get('curve-file').onchange=async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>5*1024*1024)throw new Error('Choose a curve file under 5 MB.');let count;if(file.name.toLowerCase().endsWith('.json')){const data=JSON.parse(await file.text());count=add(Array.isArray(data)?data:data.curves);}else{const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellNF:true});count=importSheet(wb,wb.SheetNames.includes('Curves')?'Curves':wb.SheetNames[0]);}message(count+' curves imported. Select an ID in the bond mappings.');}catch(e){message(e.message,true);}finally{event.target.value='';}};
@@ -94,3 +98,4 @@ window.CurveManager = (() => {
  const ready=fetch('market-data.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('Snapshot unavailable');return r.json();}).then(data=>{snapshot=data;add(data.curves,true);}).catch(e=>{get('market-status').textContent='ECB snapshot unavailable · import your market curve';get('ecb-detail').textContent=e.message+'. You can still import provider curves or use explicit flat-rate assumptions.';});
  return {ready,all:()=>[...byId.values()],importSheet,demoRows,add,defaults:()=>({discount_curve:selectedDiscount,projection_curve:selectedProjection,index:selectedIndex})};
 })();
+

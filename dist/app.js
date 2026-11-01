@@ -2,15 +2,15 @@
 const $ = id => document.getElementById(id);
 const fields = [
   ['bond_id','Bond ID','Optional · generated if blank',['bondid','isin','id','securityid','security','name'],''],
-  ['kind','Bond type','fixed, floating or zero',['type','kind','bondtype','ratetype'],'fixed'],
-  ['currency','Currency','Required with named curves · no FX conversion',['currency','ccy'],'Unspecified'],
-  ['issue','Issue date','Required · YYYY-MM-DD',['issuedate','issue','dateddate','startdate'],''],
+  ['kind','Instrument type','fixed, floating, zero or mortgage',['type','kind','bondtype','ratetype'],'fixed'],
+  ['currency','Currency','EUR only · blank cells default to EUR',['currency','ccy'],'EUR'],
+  ['issue','Issue date','Required · YYYY-MM-DD',['issuedate','issue','dateddate','startdate','originationdate'],''],
   ['maturity','Maturity date','Required · YYYY-MM-DD',['maturitydate','maturity','enddate'],''],
   ['settlement','Settlement date','Required · YYYY-MM-DD',['settlementdate','settlement','valuationdate','asofdate'],''],
-  ['notional','Principal / notional','Required · currency amount',['notional','principal','facevalue','faceamount','nominal'],''],
+  ['notional','Original principal / notional','Mortgage: original loan amount · EUR',['notional','principal','facevalue','faceamount','nominal'],''],
   ['frequency','Payments per year','1, 2, 3, 4, 6 or 12',['paymentsperyear','frequency','couponfrequency'],'2'],
   ['day_count','Coupon day count','ACT/360, ACT/365F or 30E/360',['daycount','coupondaycount','daycountconvention'],'ACT/360'],
-  ['coupon','Fixed coupon (%)','Required for fixed bonds',['coupon','couponrate','fixedcoupon','annualcouponrate'],''],
+  ['coupon','Fixed coupon / mortgage rate (%)','Required for fixed bonds and mortgages',['coupon','couponrate','fixedcoupon','annualcouponrate','fixedrate','mortgagerate'],''],
   ['spread','Floating spread (%)','0.5 = 50 basis points',['spread','margin','floatingspread'],'0'],
   ['discount','Flat discount zero rate (%)','Only when no discount curve ID is selected',['discountrate','discountzerorate','discount','zerorate'],''],
   ['projection','Flat projection zero rate (%)','Floating override when no projection curve ID is selected',['projectionrate','projectionzerorate','projection','forwardcurverate'],''],
@@ -19,10 +19,14 @@ const fields = [
   ['index','Floating index','EURIBOR-1M, -3M, -6M, -12M or a custom term index',['index','floatingindex','referenceindex'],''],
   ['index_tenor','Custom index tenor (months)','Only custom term indices; inferred for EURIBOR',['indextenor','indextenormonths'],''],
   ['index_day_count','Index day count','EURIBOR uses ACT/360; custom defaults to coupon basis',['indexdaycount'],''],
+  ['repayment','Mortgage repayment','annuity, linear or interest-only',['repayment','repaymentmethod','amortization'],'annuity'],
+  ['discount_spread_bps','Mortgage discount spread (bps)','Additional continuous discount spread · 100 bps = 1%',['discountspreadbps','mortgagespreadbps'],'0'],
+  ['rate_type','Mortgage rate type','Version 1: fixed until maturity only',['ratetype','mortgageratetype'],'fixed'],
+  ['fixed_until','Mortgage fixed until','Blank means maturity; earlier reset dates are rejected',['fixeduntil','fixedrateuntil','resetdate'],''],
   ['fixing','Current reference fixing (%)','Required for floating · excluding spread',['currentfixing','fixing','referencefixing','referencerate','currentreferencerate'],'']
 ];
 const rateKeys = new Set(['coupon','spread','discount','projection','fixing']);
-const dateKeys = new Set(['issue','maturity','settlement']);
+const dateKeys = new Set(['issue','maturity','settlement','fixed_until']);
 let workbook, grid=[], columns=[], sourceRows=[], filename='', results, runInputs=[], resultView='summary';
 let worker, messageId=0;
 const pending = new Map();
@@ -32,9 +36,9 @@ const text = (element, value) => { element.textContent = value; return element; 
 function notify(message,error=false) { $('notice').hidden=false; $('notice').className=error?'error':''; $('notice').textContent=message; }
 function progress(stage) { for(let i=1;i<=4;i++) $('step-'+i).className='step'+(i===stage?' current':i<stage?' done':''); }
 function showView(name) {
-  for(const key of ['studio','curves','workflow','method']) $(key+'-view').hidden=key!==name;
+  for(const key of ['studio','mortgage','curves','workflow','method']) $(key+'-view').hidden=key!==name;
   document.querySelectorAll('.nav').forEach(el=>el.classList.toggle('active',el.dataset.view===name));
-  $('page-label').textContent={studio:'Valuation studio',curves:'Market curves',workflow:'The workflow',method:'Method & code'}[name];
+  $('page-label').textContent={studio:'Valuation studio',mortgage:'Mortgage valuation',curves:'Market curves',workflow:'The workflow',method:'Method & code'}[name];
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
@@ -43,14 +47,15 @@ for(const [i,node] of nodes.entries()) { const div=document.createElement('div')
 
 function makeWorkbook(rows,name='Bonds') { const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),name); return wb; }
 function sampleRows() { return [
- ['Bond ID','Type','Currency','Issue date','Maturity date','Settlement date','Notional','Payments per year','Day count','Coupon %','Spread %','Discount rate %','Projection rate %','Current fixing %','Discount curve ID','Projection curve ID','Floating index'],
+ ['Bond ID','Type','Currency','Issue date','Maturity date','Settlement date','Notional','Payments per year','Day count','Coupon %','Spread %','Discount rate %','Projection rate %','Current fixing %','Discount curve ID','Projection curve ID','Floating index','Repayment','Discount spread bps'],
  ['CORP-2029','fixed','EUR','2025-01-15','2029-01-15','2026-10-27',100000,2,'30E/360',4.75,'','','','','DEMO_EUR_DISC','',''],
  ['FRN-2030','floating','EUR','2025-04-01','2030-04-01','2026-10-27',150000,4,'ACT/360','',0.75,'','',3.4,'DEMO_EUR_DISC','DEMO_EURIBOR_3M','EURIBOR-3M'],
- ['ZERO-2028','zero','EUR','2026-10-27','2028-10-27','2026-10-27',50000,'','','','','','','','DEMO_EUR_DISC','',''] ]; }
+ ['ZERO-2028','zero','EUR','2026-10-27','2028-10-27','2026-10-27',50000,'','','','','','','','DEMO_EUR_DISC','',''],
+ ['MORTGAGE-2046','mortgage','EUR','2026-01-01','2046-01-01','2026-10-27',300000,12,'',4,'',3.5,'','','flat','','','annuity',0] ]; }
 function demoWorkbook(){const wb=makeWorkbook(sampleRows());XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(CurveManager.demoRows()),'Curves');return wb;}
 $('template-btn').onclick=()=> {
- try { const wb=demoWorkbook();const notes=[['Instructions'],['Example curve rates are FICTIONAL demonstration values. Replace them with provider data.'],['Bonds: fixed, floating or zero (zero-coupon principal-only).'],['Mapped curve IDs take precedence over flat rate columns.'],['Set floating index explicitly. EURIBOR-3M needs 4 coupons/year; EURIBOR-6M needs 2.'],['Import dated zero rates or discount factors in Curves, with an index tag on projection curves.'],['Rate columns: 5 means 5%; native Excel percentages are also recognized.'],['Dates: YYYY-MM-DD or native Excel date cells.'],['Zero bonds need no coupon, payment frequency or coupon day count.'],['ECB sovereign AAA data is available separately in Market curves; it is not an EURIBOR curve.']];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(notes),'Instructions');XLSX.writeFile(wb,'bondflow-input-template.xlsx'); } catch(e) {notify(e.message,true);} };
-$('sample-btn').onclick=()=>{try{workbook=demoWorkbook();filename='sample-portfolio.xlsx';loadWorkbook();notify('Demonstration curves loaded (fictional rates). Review the fixed, EURIBOR-3M and zero-coupon examples, then run.');}catch(e){notify(e.message,true);}};
+ try { const wb=demoWorkbook();const notes=[['Instructions'],['Example curve rates are FICTIONAL demonstration values. Replace them with provider data.'],['Instruments: fixed, floating, zero or mortgage. All products are EUR. Mortgage repayment: annuity, linear, interest-only; rate fixed to maturity.'],['Mapped curve IDs take precedence over flat rate columns.'],['Set floating index explicitly. EURIBOR-3M needs 4 coupons/year; EURIBOR-6M needs 2.'],['Import dated zero rates or discount factors in Curves, with an index tag on projection curves.'],['Rate columns: 5 means 5%; native Excel percentages are also recognized.'],['Dates: YYYY-MM-DD or native Excel date cells.'],['Zero bonds need no coupon, payment frequency or coupon day count.'],['ECB sovereign AAA data is available separately in Market curves; it is not an EURIBOR curve.']];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(notes),'Instructions');XLSX.writeFile(wb,'bondflow-input-template.xlsx'); } catch(e) {notify(e.message,true);} };
+$('sample-btn').onclick=()=>{try{workbook=demoWorkbook();filename='sample-portfolio.xlsx';loadWorkbook();notify('Demonstration curves loaded (fictional rates). Review the bond and mortgage examples, then run.');}catch(e){notify(e.message,true);}};
 async function readFile(file) {
  if(!file)return;
  if(!/\.(xlsx|xls|csv)$/i.test(file.name)) {notify('Choose an .xlsx, .xls or .csv file.',true);return;}
@@ -84,8 +89,8 @@ function readSheet() {
  columns=(grid[header-1]||[]).map((value,index)=>({index,label:String(value??'').trim()||'Column '+XLSX.utils.encode_col(index)}));
  sourceRows=[];
  for(let r=header;r<grid.length;r++)if(grid[r].some(v=>v!==null&&String(v).trim()!==''))sourceRows.push({values:grid[r],row:r+1});
- if(sourceRows.length>5000)throw new Error('Maximum 5,000 bonds per run. Choose a smaller worksheet.');
- $('row-count').textContent=sourceRows.length+' bonds found';
+ if(sourceRows.length>5000)throw new Error('Maximum 5,000 instruments per run. Choose a smaller worksheet.');
+ $('row-count').textContent=sourceRows.length+' instruments found';
  $('mapping-fields').replaceChildren();
  for(const [key,label,hint,aliases,fallback]of fields){
   const row=document.createElement('div');row.className='mapping-row';
@@ -149,10 +154,10 @@ $('run-btn').onclick=async()=>{
   $('mapping-card').hidden=true;$('results-section').hidden=false;progress(4);
   const ok=results.summary.filter(r=>r.Status==='OK').length;
   $('metric-valued').textContent=ok;$('metric-flows').textContent=results.cashflows.length.toLocaleString();$('metric-errors').textContent=results.errors.length;
-  $('run-caption').textContent=`${filename} · ${results.summary.length} bonds · ${results.runInfo.seconds}s · ${new Date(results.runInfo.timestamp).toLocaleString()}`;
+  $('run-caption').textContent=`${filename} · ${results.summary.length} instruments · ${results.runInfo.seconds}s · ${new Date(results.runInfo.timestamp).toLocaleString()}`;
   $('bond-filter').replaceChildren(new Option('All bonds',''));
   for(const row of results.summary.filter(r=>r.Status==='OK'))$('bond-filter').add(new Option(`${row['Bond ID']} · row ${row['Source row']}`,String(row['Source row'])));
-  resultView='summary';showResults();notify(`${ok} bonds valued. ${results.errors.length} rows need review. Your Excel export includes all results and errors.`,!!results.errors.length);
+  renderMortgageSummary();resultView='summary';showResults();notify(`${ok} instruments valued. ${results.errors.length} rows need review. Your Excel export includes all results and errors.`,!!results.errors.length);
   $('runtime-status').textContent='Python engine ready · data stays local';
  }catch(e){notify('Valuation could not complete: '+e.message,true);progress(2);$('runtime-status').textContent='Python engine stopped · retry available';}
  finally{controls.forEach(c=>c.disabled=false);$('run-btn').innerHTML='Run valuation <span>→</span>';}
@@ -179,15 +184,15 @@ function showResults(){
  $('bond-filter-label').hidden=resultView!=='cashflows';
  let rows=results[resultView];
  if(resultView==='cashflows'&&$('bond-filter').value)rows=rows.filter(r=>String(r['Source row'])===$('bond-filter').value);
- const headers=resultView==='summary'?['Source row','Bond ID','Currency','Status','Type','Index','Dirty PV','Accrued interest','Clean PV','Clean price / 100','Discount curve','Discount curve date','Projection curve','Warnings','Error']:undefined;
+ const headers=resultView==='summary'?['Source row','Bond ID','Currency','Status','Type','Repayment','Outstanding principal','Index','Dirty PV','Accrued interest','Clean PV','Clean price / 100','Discount curve','Discount curve date','Projection curve','Warnings','Error']:undefined;
  renderTable($('result-table'),rows,headers);
- $('result-footer').textContent=`Showing ${Math.min(rows.length,500)} of ${rows.length.toLocaleString()} rows. Excel download includes every row and full precision. Amounts are in each bond’s currency; no cross-currency total is calculated.`;
+ $('result-footer').textContent=`Showing ${Math.min(rows.length,500)} of ${rows.length.toLocaleString()} rows. Excel download includes every row and full precision. Amounts are in EUR. Mortgage prices per 100 use outstanding principal. Preview is capped; export contains the complete schedule.`;
 }
 document.querySelectorAll('[data-result]').forEach(b=>b.onclick=()=>{resultView=b.dataset.result;showResults();});$('bond-filter').onchange=showResults;
 function exportResults(){
  if(!results)return;
  const wb=XLSX.utils.book_new();
- const info=[{Setting:'Run time (UTC)',Value:results.runInfo.timestamp},{Setting:'Input file',Value:results.runInfo.file},{Setting:'Worksheet',Value:results.runInfo.sheet},{Setting:'Header row',Value:results.runInfo.header},{Setting:'Numeric input rates',Value:results.runInfo.rateUnit},{Setting:'Normalized input rates',Value:'Percentage points: 5 = 5%'},{Setting:'Valuation convention',Value:'Settlement PV; payments on settlement excluded'},{Setting:'Discount curves',Value:'Named dated curves when supplied; otherwise explicit flat continuous zero-rate overrides'},{Setting:'Floating coupons',Value:'Named term index: supplied current fixing + spread; index-specific forward projection + spread'},{Setting:'Schedule',Value:'Backward from maturity; month-end preserved; short first stub; no holiday adjustments'},{Setting:'Model scope',Value:'Fixed, zero-coupon and simple term-floating bullet bonds. No overnight compounding or embedded options.'},{Setting:'Workflow version',Value:'2.0.0'},{Setting:'Source code',Value:'https://github.com/alarabuyukates-pixel/ValuationEngine'}];
+ const info=[{Setting:'Run time (UTC)',Value:results.runInfo.timestamp},{Setting:'Input file',Value:results.runInfo.file},{Setting:'Worksheet',Value:results.runInfo.sheet},{Setting:'Header row',Value:results.runInfo.header},{Setting:'Numeric input rates',Value:results.runInfo.rateUnit},{Setting:'Normalized input rates',Value:'Percentage points: 5 = 5%'},{Setting:'Valuation convention',Value:'Settlement PV; payments on settlement excluded'},{Setting:'Discount curves',Value:'Named dated curves when supplied; otherwise explicit flat continuous zero-rate overrides'},{Setting:'Floating coupons',Value:'Named term index: supplied current fixing + spread; index-specific forward projection + spread'},{Setting:'Schedule',Value:'Backward from maturity; month-end preserved; short first stub; no holiday adjustments'},{Setting:'Model scope',Value:'EUR bonds and fixed-to-maturity mortgages. No overnight compounding, prepayment, credit loss or embedded options.'},{Setting:'Mortgage conventions',Value:'Nominal annual / frequency; regular periods; accrued prorated by elapsed days; past instalments assumed paid. Prices per 100 of outstanding principal.'},{Setting:'Mortgage discount spread',Value:'User-supplied bps; multiplier exp(-spread/10000 * ACT/365F) on settlement-normalized curve factors'},{Setting:'Workflow version',Value:'2.1.0'},{Setting:'Source code',Value:'https://github.com/alarabuyukates-pixel/ValuationEngine'}];
  for(const [name,rows]of [['Valuations',results.summary],['Cash Flows',results.cashflows],['Inputs',results.inputs],['Curves',results.curves?.length?results.curves:[{Status:'Only flat overrides used; see Inputs and Valuations'}]],['Errors',results.errors.length?results.errors:[{Status:'No errors'}]],['Run Info',info]]){
   const ws=XLSX.utils.json_to_sheet(rows);
   if(ws['!ref']){const range=XLSX.utils.decode_range(ws['!ref']);ws['!autofilter']={ref:ws['!ref']};ws['!cols']=Array.from({length:range.e.c+1},()=>({wch:21}));
@@ -200,3 +205,61 @@ function exportResults(){
 $('export-btn').onclick=()=>{try{exportResults();}catch(e){notify('Export failed: '+e.message,true);}};
 $('remap-btn').onclick=()=>{$('results-section').hidden=true;$('mapping-card').hidden=false;progress(2);$('notice').hidden=true;};
 $('reset-btn').onclick=()=>{workbook=null;results=null;sourceRows=[];$('mapping-card').hidden=true;$('results-section').hidden=true;$('upload-layout').hidden=false;$('file-input').value='';$('notice').hidden=true;progress(1);};
+
+
+// Single-mortgage form and Excel uploads use exactly the same audited workflow.
+const mortgageForm=$('mortgage-form');
+const today=new Date();
+$('mtg-settlement').value=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+function mortgageBasis(){
+ const id=$('mtg-curve').value;
+ const curve=CurveManager.all().find(c=>c.id===id);
+ $('mtg-flat-label').hidden=id!=='flat';$('mtg-discount').required=id==='flat';
+ $('mtg-curve-detail').textContent=curve?`${curve.source} · EUR · market date ${curve.as_of}. ${curve.curve_type==='sovereign'?'Sovereign benchmark, not a mortgage market curve. ':''}Last pillar ${curve.pillars.at(-1).date}; settlement and maturity must be covered. Your spread is an explicit assumption.`:'Flat discount rate is continuously compounded on ACT/365F. The additional spread is applied on top.';
+}
+$('mtg-curve').onchange=mortgageBasis;
+$('mtg-repayment').onchange=()=>{$('mtg-repayment-detail').textContent={annuity:'Equal periodic instalments; the interest share falls as principal is repaid.',linear:'Equal principal repayments; total instalments decline over time.','interest-only':'Periodic interest payments; the entire principal is repaid at maturity.'}[$('mtg-repayment').value];};
+$('mtg-repayment').onchange();mortgageBasis();
+window.addEventListener('curves-updated',()=>{
+ const previous=$('mtg-curve').value;
+ $('mtg-curve').replaceChildren(new Option('Explicit flat zero rate','flat'));
+ for(const c of CurveManager.all().filter(c=>c.currency==='EUR'))$('mtg-curve').add(new Option(`${c.id} · ${c.as_of}`,c.id));
+ $('mtg-curve').value=[...$('mtg-curve').options].some(o=>o.value===previous)?previous:'flat';
+ mortgageBasis();
+});
+CurveManager.ready.then(()=>{
+ window.dispatchEvent(new Event('curves-updated'));
+ if(CurveManager.all().some(c=>c.id==='ECB_EUR_AAA'))$('mtg-curve').value='ECB_EUR_AAA';
+ mortgageBasis();
+});
+function mortgageRows(){return [
+ ['Bond ID','Type','Currency','Origination date','Maturity date','Settlement date','Notional','Payments per year','Fixed rate %','Repayment','Discount curve ID','Discount rate %','Discount spread bps','Mortgage rate type'],
+ [$('mtg-id').value.trim(),'mortgage','EUR',$('mtg-issue').value,$('mtg-maturity').value,$('mtg-settlement').value,Number($('mtg-notional').value),Number($('mtg-frequency').value),Number($('mtg-coupon').value),$('mtg-repayment').value,$('mtg-curve').value,Number($('mtg-discount').value),Number($('mtg-spread').value),'fixed']
+];}
+$('mortgage-template').onclick=()=>{try{XLSX.writeFile(makeWorkbook(mortgageRows(),'Mortgages'),'bondflow-mortgage-template.xlsx');}catch(e){$('mortgage-notice').hidden=false;$('mortgage-notice').textContent=e.message;}};
+mortgageForm.onsubmit=async event=>{
+ event.preventDefault();
+ if(!mortgageForm.reportValidity())return;
+ const button=$('mortgage-run');button.disabled=true;button.textContent='Calculating…';$('mortgage-notice').hidden=true;
+ try{
+  await CurveManager.ready;
+  workbook=makeWorkbook(mortgageRows(),'Mortgages');filename='mortgage-valuation.xlsx';loadWorkbook();
+  // The direct form enters percentage points irrespective of previous import settings.
+  $('rate-unit').value='points';
+  await $('run-btn').onclick();
+  if(!results||results.errors.length){
+   $('mortgage-notice').hidden=false;$('mortgage-notice').textContent=results?.errors[0]?.Error||$('notice').textContent;
+  }else{showView('studio');$('results-section').scrollIntoView({behavior:'smooth',block:'start'});}
+ }catch(e){$('mortgage-notice').hidden=false;$('mortgage-notice').textContent=e.message;}
+ finally{button.disabled=false;button.textContent='Value mortgage →';}
+};
+function renderMortgageSummary(){
+ let panel=$('mortgage-summary');if(!panel){panel=document.createElement('div');panel.id='mortgage-summary';$('results-section').insertBefore(panel,$('results-section').querySelector('.metrics'));}
+ panel.replaceChildren();const loans=results.summary.filter(r=>r.Status==='OK'&&r.Type==='mortgage');panel.hidden=!loans.length;
+ if(!loans.length)return;
+ const metrics=document.createElement('div');metrics.className='metrics';
+ const items=[['OUTSTANDING PRINCIPAL',loans.reduce((s,r)=>s+r['Outstanding principal'],0),'Scheduled balance at settlement · EUR'],['MORTGAGE DIRTY PV',loans.reduce((s,r)=>s+r['Dirty PV'],0),'Discounted remaining payments · EUR'],['NEXT INSTALMENT',loans.length===1?loans[0]['Next payment']:null,loans.length===1?'Interest + principal · EUR':'Select an instrument in the cash-flow table']];
+ for(const[label,value,hint]of items){const card=document.createElement('div');card.className='card';const small=document.createElement('small');small.textContent=label;const strong=document.createElement('strong');strong.textContent=value===null?'—':fmt(value);const span=document.createElement('span');span.textContent=hint;card.append(small,strong,span);metrics.append(card);}panel.append(metrics);
+ const note=document.createElement('div');note.className='card mortgage-result-note';const title=document.createElement('strong');title.textContent='Contractual mortgage value · EUR';note.append(title,document.createTextNode('Fixed rate until maturity. Scheduled past instalments assumed paid; no early repayment, defaults or fees. Inspect balances and payments in Cash flows; source curves and assumptions are included in Excel. '));
+ const edit=document.createElement('button');edit.className='text-button';edit.textContent='Back to mortgage form →';edit.onclick=()=>showView('mortgage');note.append(edit);panel.append(note);
+}

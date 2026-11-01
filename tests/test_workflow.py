@@ -51,11 +51,16 @@ class WorkflowTests(unittest.TestCase):
         result = json.loads(run_json(json.dumps([fixed(coupon='5%', discount='4') ])))
         self.assertAlmostEqual(result['cashflows'][0]['Interest'], 2500)
 
-    def test_distinct_currencies_preserved(self):
+    def test_eur_only_and_missing_currency_defaults_to_eur(self):
         result = run_workflow([fixed(), fixed(_row=3, currency='USD')])
         self.assertEqual([s['Currency'] for s in result['summary']], ['EUR', 'USD'])
+        self.assertEqual([s['Status'] for s in result['summary']], ['OK', 'ERROR'])
+        default = run_workflow([fixed(currency='')])
+        self.assertEqual(default['summary'][0]['Currency'], 'EUR')
+        self.assertEqual(default['errors'], [])
         self.assertNotIn('total_pv', result)
 
 
 if __name__ == '__main__':
     unittest.main()
+
