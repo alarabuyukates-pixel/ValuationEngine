@@ -1,0 +1,1 @@
+{"name":"bondflow-validation","private":true,"scripts":{"test:ui":"node tests/interface.cjs"},"devDependencies":{"jsdom":"26.1.0"}}
