@@ -3,7 +3,7 @@ import {loadPyodide} from '../dist/vendor/pyodide/pyodide.mjs';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const py = await loadPyodide();
-for(const file of ['bond_engine.py','mortgage_engine.py','rate_projection.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+file,readFileSync(new URL('../dist/'+file,import.meta.url),'utf8'));
+for(const file of ['bond_engine.py','mortgage_engine.py','rate_projection.py','scenario_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+file,readFileSync(new URL('../dist/'+file,import.meta.url),'utf8'));
 const payload=[{_row:2,bond_id:'FIXED',kind:'fixed',currency:'EUR',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'30E/360',coupon:5,discount:4},
 {_row:3,bond_id:'FLOAT',kind:'floating',currency:'EUR',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'ACT/360',spread:.5,discount:4,projection:3.5,fixing:3},
 {_row:4,bond_id:'BAD',kind:'fixed'}];

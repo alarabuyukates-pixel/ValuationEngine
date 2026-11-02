@@ -33,6 +33,7 @@ jobs:
         run: PYTHONPATH=dist python -m unittest discover -s tests -v
       - name: Validate browser scripts
         run: |
+          node --check dist/scenarios.js
           node --check dist/audit.js
           node --check dist/app.js
           node --check dist/curves.js

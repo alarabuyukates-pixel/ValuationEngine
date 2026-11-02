@@ -5,6 +5,7 @@ from math import isfinite
 from bond_engine import Bond, Curve, value_bond, normalize_index, EURIBOR_TENORS, year_fraction
 from mortgage_engine import Mortgage, value_mortgage, value_floating_mortgage
 from rate_projection import RateSchedule, value_reset_bond
+from scenario_engine import shock_bps
 
 
 def parse_date(value):
@@ -30,7 +31,7 @@ def rate(row, key):
     return numeric(row, key) / 100
 
 
-def run_workflow(payload):
+def run_workflow(payload, scenario=None):
     """Accept legacy bond rows or {bonds: [...], curves: [...]}.
 
     Curve zero_rate inputs are DECIMAL annual rates, unlike percentage-point bond
@@ -57,10 +58,27 @@ def run_workflow(payload):
     curve_cache, curve_audit = {}, {}
     summaries, cashflows, errors, inputs = [], [], [], []
 
+    def apply_shock(curve, identifier, row, settlement, role):
+        from scenario_engine import applies, ShockedCurve, shock_bps
+        if not applies(scenario, role, identifier):
+            return curve
+        shocked = ShockedCurve(curve, settlement, scenario)
+        key = (identifier, role, str(settlement), row.get('_row'))
+        curve_audit[key] = [{
+            'Curve ID': identifier, 'Role': role, 'Scenario ID': scenario['id'],
+            'Scenario': scenario['name'], 'Source row': row.get('_row', ''),
+            'Currency': 'EUR', 'As of': str(curve.as_of), 'Shock anchor': str(settlement),
+            'Pillar date': str(d), 'Base discount factor': factor,
+            'Discount factor': shocked.df(d),
+            'Shock bps': shock_bps(scenario, max(0, (d-settlement).days/365)) if d > settlement else 0,
+            'Shock convention': 'Additive continuous zero; ACT/365F from settlement'
+        } for d, factor in curve.pillars]
+        return shocked
+
     def resolve_curve(identifier, row, currency, settlement, maturity, role, index='', index_mode='named'):
         identifier = str(identifier or '').strip()
         if not identifier or identifier.lower() in ('flat', 'flat override'):
-            return (Curve.flat(settlement, maturity, rate(row, role)),
+            return (apply_shock(Curve.flat(settlement, maturity, rate(row, role)), 'FLAT OVERRIDE', row, settlement, role),
                     'FLAT OVERRIDE', str(settlement), 'User-supplied flat rate')
         if identifier in duplicate_ids:
             raise ValueError(f'Duplicate curve ID: {identifier}')
@@ -102,7 +120,7 @@ def run_workflow(payload):
                 'Pillar date': str(d), 'Discount factor': factor,
                 'Zero rate %': float(quoted[str(d)]) * 100 if quoted.get(str(d)) is not None and str(quoted.get(str(d))).strip() else '',
             } for d, factor in curve.pillars]
-        return curve, identifier, str(curve.as_of), source
+        return apply_shock(curve, identifier, row, settlement, role), identifier, str(curve.as_of), source
 
     for position, row in enumerate(rows, 1):
         if not isinstance(row, dict):
@@ -237,6 +255,7 @@ def run_workflow(payload):
                 warnings.append('Unspecified index accepted for legacy flat input')
             summaries.append({**identity, 'Status': 'OK', 'Type': kind,
                 'Rate type': 'floating' if is_floating else 'fixed',
+                **({'Discount shocked': hasattr(discount, 'scenario'), 'Projection shocked': hasattr(projection, 'scenario')} if scenario else {}),
                 'Index': index, 'Index mode': index_mode if is_floating else '',
                 'Index tenor months': tenor or '', 'Index day count': index_basis,
                 'Reset interval months': reset_months or '',
@@ -274,6 +293,9 @@ def run_workflow(payload):
                     'Present value': f.present_value,
                     'Base payment DF': discount.df(f.payment), 'Settlement DF': discount.df(settlement),
                     'Discount time': year_fraction(settlement,f.payment,'ACT/365F'),
+                    **({'Scenario ID': scenario['id'], 'Scenario': scenario['name'],
+                        'Applied discount shock bps': shock_bps(scenario, (f.payment-settlement).days/365) if hasattr(discount,'scenario') else 0,
+                        'Unshocked payment DF': discount.base.df(f.payment) if hasattr(discount,'base') else discount.df(f.payment)} if scenario else {}),
                     'Spread %': spread * 100 if is_floating else 0,
                     'Reset date': str(q.reset) if q else '',
                     'Index end date': str(q.end) if q else '',
@@ -297,5 +319,9 @@ def run_workflow(payload):
 
 
 def run_json(payload):
-    return json.dumps(run_workflow(json.loads(payload)), allow_nan=False)
+    data = json.loads(payload)
+    if isinstance(data, dict) and data.get('scenarios') is not None:
+        from scenario_engine import run_scenarios
+        return json.dumps(run_scenarios(data), allow_nan=False)
+    return json.dumps(run_workflow(data), allow_nan=False)
 
