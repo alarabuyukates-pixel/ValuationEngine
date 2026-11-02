@@ -45,6 +45,22 @@ PASS means internal arithmetic reconciliation within EUR 0.01, **not independent
 
 Use Market curves → Download curve template for provider imports, or include a `Curves` sheet in the mixed portfolio. Required metadata: Curve ID, Currency, As of, Pillar date; enter exactly one Zero rate % or Discount factor per pillar. Repeat consistent Source, Reference index, Compounding and Day count metadata. Named projection curves need their reference-index tag. JSON uses decimal zero rates; Excel uses percentage points or native percentage cells. Curves interpolate log discount factors without extrapolation. Par swap yields must be bootstrapped externally first. Provider data use depends on the user's data entitlement.
 
+## Interest-rate scenarios and sensitivity
+
+Under **Market curves**, define parallel shocks (e.g. +100 bps) or tenor-specific shocks, then choose discount, projection or both. Apply to all curves, one named curve, or flat assumptions only. Under **Data & valuation**, select any combination of up to 10 scenarios. Base is always calculated; every scenario starts independently from the same unshocked curves.
+
+Shocks are additive continuously compounded zero-rate spreads. Tenors are ACT/365F years from each position's settlement, not the curve snapshot date. At queried date d, with t = max(0, ACT/365F(settlement, d)):
+
+`shocked_DF(d) = base_DF(d) × exp(-shock_bps(t) / 10000 × t)`
+
+Tenor shocks interpolate linearly in bps, holding the first/last shock outside the entered tenor range. The original curve coverage still applies: no extrapolation of market DFs. The engine evaluates the shock at exact cash-flow and index dates rather than approximating it only at market pillars. Negative rates have no implicit floor. Supported shocks range from -5000 to +5000 bps.
+
+Each scenario fully regenerates future floating coupons and mortgage amortization from the changed projection curve and discounts them on the changed discount curve. Known fixings, the current contractual instalment and contractual spreads remain unchanged; annuity instalments recast at future resets. Fixed-rate cash flows do not change. Shocking only projection leaves discount factors unchanged, even if one curve ID serves both roles.
+
+Results show per-product base PV, scenario PV, EUR and percentage changes, plus comparable portfolio totals. Totals are withheld if any product fails or settlement dates differ; failures never become zero-PV contributions. The detailed-results selector controls valuations, cash flows, resets and the individual validation workbook. Sensitivity compares all selected scenarios. All-results Excel includes definitions, sensitivity, totals and every scenario's valuation, cash flows, curves and errors. Individual validation Excel identifies the selected scenario and includes formulas for the discount shock. Scenario definitions are session-only and can be exported as an Excel record.
+
+These are full-revaluation scenario impacts, not regulatory IRRBB shocks, duration, DV01, or prepayment/credit stress models.
+
 ## Local development and verification
 
 ```sh
