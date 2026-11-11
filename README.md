@@ -31,7 +31,7 @@ Repayment: annuity, linear or interest-only. Mortgage schedules use regular peri
 
 Fixed loans reconstruct balances from original principal assuming past scheduled payments were paid. Seasoned floating loans require **current outstanding principal**. Seasoned floating annuities also require **current contractual instalment**; future resets recalculate that instalment using remaining balance and term. Floating linear loans amortize current outstanding evenly over remaining payments. Negative amortization is rejected. Prices per 100 use current outstanding.
 
-Mortgage discount spread is in **basis points**, separate from contractual floating spread. Effective discount factor is `DF(payment)/DF(settlement) × exp(-discount_spread_bps/10000 × ACT/365F)`. No credit loss, arrears, prepayment, fees, caps/floors or fixed-then-floating hybrid is modeled. Positions represent positive lender assets; liability signs, net balance-sheet aggregation and regulatory interest-rate-risk measures remain future work.
+Mortgage discount spread is in **basis points**, separate from contractual floating spread. Effective discount factor is `DF(payment)/DF(settlement) × exp(-discount_spread_bps/10000 × ACT/365F)`. No credit loss, arrears, fees, caps/floors or fixed-then-floating hybrid is modeled. Positions represent positive lender assets; liability signs, net balance-sheet aggregation and regulatory interest-rate-risk measures remain future work.
 
 ## Product validation Excel
 
@@ -55,11 +55,11 @@ Shocks are additive continuously compounded zero-rate spreads. Tenors are ACT/36
 
 Tenor shocks interpolate linearly in bps, holding the first/last shock outside the entered tenor range. The original curve coverage still applies: no extrapolation of market DFs. The engine evaluates the shock at exact cash-flow and index dates rather than approximating it only at market pillars. Negative rates have no implicit floor. Supported shocks range from -5000 to +5000 bps.
 
-Each scenario fully regenerates future floating coupons and mortgage amortization from the changed projection curve and discounts them on the changed discount curve. Known fixings, the current contractual instalment and contractual spreads remain unchanged; annuity instalments recast at future resets. Fixed-rate cash flows do not change. Shocking only projection leaves discount factors unchanged, even if one curve ID serves both roles.
+Each scenario fully regenerates future floating coupons and mortgage amortization from the changed projection curve and discounts them on the changed discount curve. Known fixings, the current contractual instalment and contractual spreads remain unchanged; annuity instalments recast at future resets. Bond fixed-rate cash flows do not change. Mortgage CPR equations are reevaluated on shocked discount rates and projected coupons; rate-sensitive prepayment can therefore change even fixed mortgage cash flows. Shocking only projection leaves discount factors unchanged, even if one curve ID serves both roles.
 
 Results show per-product base PV, scenario PV, EUR and percentage changes, plus comparable portfolio totals. Totals are withheld if any product fails or settlement dates differ; failures never become zero-PV contributions. The detailed-results selector controls valuations, cash flows, resets and the individual validation workbook. Sensitivity compares all selected scenarios. All-results Excel includes definitions, sensitivity, totals and every scenario's valuation, cash flows, curves and errors. Individual validation Excel identifies the selected scenario and includes formulas for the discount shock. Scenario definitions are session-only and can be exported as an Excel record.
 
-These are full-revaluation scenario impacts, not regulatory IRRBB shocks, duration, DV01, or prepayment/credit stress models.
+These are full-revaluation scenario impacts, not regulatory IRRBB shocks, duration, DV01, or dedicated prepayment/credit stress scenarios.
 
 ## Local development and verification
 
@@ -80,3 +80,39 @@ npm run test:ui
 Tests cover valuation mathematics, mixed-row isolation, dated curves, floating reset schedules, mortgage balances and the real Python WebAssembly runtime. Interface integration uses JSDOM with actual SheetJS and Pyodide, including mixed import, edits, result invalidation, Excel formulas and workbook round trips.
 
 GitHub Actions validates and deploys `dist/` on changes to main. `scripts/package_source.py` generates the downloadable source ZIP. The earlier ChatGPT-hosted site is a separate deployment and is not updated by this repository.
+
+
+## Mortgage prepayment (v3.2)
+
+Set `prepayment_model` to `none` (default), `cpr` or `formula` in direct entry or Excel.
+`cpr` is annual percentage points (6 = 6%, including percentage-formatted Excel cells).
+`cpr_formula` returns annual percentage points, e.g.
+`min(40, max(0, base_cpr_pct + 2 * (coupon_pct - market_rate_pct)))`.
+Allowed variables: `base_cpr_pct`, `age_months`, `remaining_months`, `balance`,
+`original_principal`, `coupon_pct`, `market_rate_pct`, `period`.
+Age and remaining months are evaluated at payment (ACT/365.25 × 12).
+`balance` is opening balance; `period` counts payment periods from origination. `market_rate_pct` is the continuous
+zero rate from settlement to payment on the discount curve, excluding the mortgage spread.
+Arithmetic, parentheses, powers (`^` or `**`) and `min/max/abs/exp/log/sqrt` only;
+no Python evaluation, attributes, imports, indexing or arbitrary functions.
+Expressions have length, node, exponent and intermediate-value limits.
+Nonfinite or out-of-range CPR (outside 0–100%) causes a row error; it is never silently clipped.
+
+On each future payment, scheduled principal is paid first, then prepayment equals
+`(opening - scheduled principal) * (1 - (1 - CPR/100)^exposure)`.
+Exposure is `1/frequency`, prorated for the remaining days in the first partial
+period. Historical prepayment is not reconstructed: fixed balances assume historical
+scheduled payments; floating balances use supplied current outstanding.
+The policy is payment reduction with contractual maturity retained: fixed annuities
+recast over remaining payments, floating annuity payments reduce proportionally and
+recast at future rate resets, and linear principal reduces proportionally. Interest-only
+loans retain their remaining bullet. 100% CPR can repay earlier; no additional
+prepayment applies on the final contractual payment. No penalties or fees.
+Current-period interest and accrued interest are computed before prepayment.
+
+Outputs separate scheduled principal, prepayment, total principal, annual CPR and
+period prepayment rate. Product validation includes a separate CPR conversion and
+principal-split Excel audit. Custom equation output is captured, not independently
+translated into Excel. Input exports preserve the model and equation; changing either
+invalidates prior results. Each scenario reevaluates the equation, allowing rate incentive.
+AI/chatbot document-to-model generation is outside this first manual-model release.
