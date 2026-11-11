@@ -154,5 +154,5 @@ def run_scenarios(payload):
             'Delta PV': sum(matched_scenario)-sum(matched_base) if total_ok else '',
             'Delta PV %': (sum(matched_scenario)/sum(matched_base)-1)*100 if total_ok and sum(matched_base) else '',
             'Delta clean PV': sum(matched_clean_scenario)-sum(matched_clean_base) if total_ok else '',
-            'Note': 'EUR asset total; common settlement date' if total_ok else 'Total withheld: all products must value at the same settlement date in base and scenario'})
+            'Note': 'EUR signed total; common settlement date' if total_ok else 'Total withheld: all products must value at the same settlement date in base and scenario'})
     return base

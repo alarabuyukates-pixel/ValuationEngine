@@ -16,3 +16,5 @@
 
 .form-grid textarea{width:100%;min-width:0;padding:11px;border:1px solid #d4ddd3;border-radius:6px;background:white;color:#243d32;resize:vertical;font:inherit}.form-grid textarea:focus-visible{outline:3px solid #8baa64;outline-offset:3px}#field-cpr_formula{grid-column:1/-1}#prepayment-guidance{overflow-wrap:anywhere}
 @media(max-width:560px){.scenario-run .card-title{flex-wrap:wrap;gap:12px}.scenario-run .card-title button{max-width:100%;white-space:normal;text-align:left}}
+
+.deposit-tenor{margin:20px 0;padding:20px;border:1px solid #d4ddd3;border-radius:8px;background:#f3f6ef}.deposit-term-controls{display:flex;gap:14px;align-items:end;flex-wrap:wrap;margin:14px 0}.deposit-term-controls label{display:grid;gap:8px;font-size:13px}.deposit-term-controls input,.deposit-term-controls select{padding:11px;border:1px solid #d4ddd3;border-radius:6px;background:white;width:130px}.deposit-tenor small{display:block;line-height:1.7;color:#637568}@media(max-width:560px){.deposit-term-controls label{flex:1;min-width:80px}.deposit-term-controls input,.deposit-term-controls select{width:100%}.deposit-term-controls button{width:100%;white-space:normal;text-align:left}}
