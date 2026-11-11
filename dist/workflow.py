@@ -138,8 +138,14 @@ def run_workflow(payload, scenario=None):
             aliases = {'frn': 'floating', 'float': 'floating', 'floating rate': 'floating',
                        'fixed rate': 'fixed', 'fixed-rate': 'fixed', 'floating-rate': 'floating',
                        'discount': 'zero', 'zero-coupon': 'zero', 'zero coupon': 'zero',
-                       'zero coupon bond': 'zero', 'discount bond': 'zero', 'mortgage loan': 'mortgage'}
+                       'zero coupon bond': 'zero', 'discount bond': 'zero', 'mortgage loan': 'mortgage',
+                       'consumer loan': 'loan', 'commercial loan': 'loan', 'credit': 'loan'}
+            raw_kind = kind
             kind = aliases.get(kind, kind)
+            amortizing = kind in ('mortgage', 'loan')
+            loan_type = str(row.get('loan_type') or ('commercial' if raw_kind == 'commercial loan' else 'consumer')).strip().lower()
+            if kind == 'loan' and loan_type not in ('consumer', 'commercial', 'other'):
+                raise ValueError('Loan category must be consumer, commercial or other')
             if currency != 'EUR':
                 raise ValueError('This workspace supports EUR only; EURIBOR requires bond currency EUR. No FX conversion is performed')
             issue = parse_date(row.get('issue'))
@@ -150,8 +156,8 @@ def run_workflow(payload, scenario=None):
             if (maturity - issue).days > 366 * 150:
                 raise ValueError('Maximum bond term is 150 years')
             rate_type = str(row.get('rate_type') or ('floating' if kind == 'floating' else 'fixed')).strip().lower()
-            is_floating = kind == 'floating' or kind == 'mortgage' and rate_type == 'floating'
-            if kind == 'mortgage' and rate_type not in ('fixed', 'floating'):
+            is_floating = kind == 'floating' or amortizing and rate_type == 'floating'
+            if amortizing and rate_type not in ('fixed', 'floating'):
                 raise ValueError('Mortgage rate type must be fixed or floating')
             index_mode = str(row.get('index_mode') or 'named').strip().lower()
             if is_floating and index_mode not in ('named', 'curve'):
@@ -190,7 +196,7 @@ def run_workflow(payload, scenario=None):
                     tenor = int(supplied_tenor) if supplied_tenor is not None else (12 // frequency if not index and not modern else None)
                     if tenor is None:
                         raise ValueError('A custom term index requires its tenor in months')
-                index_basis = str(row.get('index_day_count') or ('ACT/360' if index in EURIBOR_TENORS or kind == 'mortgage' or index_mode == 'curve' else basis)).strip().upper()
+                index_basis = str(row.get('index_day_count') or ('ACT/360' if index in EURIBOR_TENORS or amortizing or index_mode == 'curve' else basis)).strip().upper()
                 if index in EURIBOR_TENORS and index_basis != 'ACT/360':
                     raise ValueError('EURIBOR reference forwards use ACT/360')
                 explicit_reset = str(row.get('reset_months') or '').strip()
@@ -200,14 +206,17 @@ def run_workflow(payload, scenario=None):
                 reset_months = int(reset_value)
                 if kind == 'floating' and index_mode == 'named' and not explicit_reset and frequency != 12 // tenor:
                     raise ValueError('Set reset months explicitly when payment frequency differs from index tenor')
-            coupon = rate(row, 'coupon') if not is_floating and kind in ('fixed', 'mortgage') else 0
-            if kind == 'mortgage':
+            coupon = rate(row, 'coupon') if not is_floating and kind in ('fixed', 'mortgage', 'loan') else 0
+            if amortizing:
                 if str(row.get('fixed_until') or '').strip():
                     if is_floating or parse_date(row['fixed_until']) != maturity:
-                        raise ValueError('Fixed-until applies only to mortgages fixed through maturity; hybrid loans are unsupported')
+                        raise ValueError('Fixed-until applies only to loans fixed through maturity; hybrid loans are unsupported')
                 bond = Mortgage(issue, maturity, numeric(row, 'notional'), coupon, frequency,
                                 str(row.get('repayment') or 'annuity').strip().lower(),
-                                numeric(row, 'discount_spread_bps') if str(row.get('discount_spread_bps') or '').strip() else 0.0)
+                                numeric(row, 'discount_spread_bps') if str(row.get('discount_spread_bps') or '').strip() else 0.0,
+                                str(row.get('prepayment_model') or 'none').strip().lower(),
+                                numeric(row, 'cpr') if str(row.get('cpr') or '').strip() else 0.0,
+                                str(row.get('cpr_formula') or '').strip())
             else:
                 # ResetSchedule owns index conventions, independently of payment frequency.
                 bond = Bond(issue, maturity, notional=numeric(row, 'notional'),
@@ -224,11 +233,11 @@ def run_workflow(payload, scenario=None):
                     row.get('projection_curve'), row, currency, settlement,
                     max(maturity, resets.required_end), 'projection', index, index_mode)
                 resets.bind(projection)
-            if kind == 'mortgage' and is_floating:
+            if amortizing and is_floating:
                 outstanding = numeric(row, 'outstanding') if str(row.get('outstanding') or '').strip() else None
                 current_payment = numeric(row, 'current_payment') if str(row.get('current_payment') or '').strip() else None
                 result = value_floating_mortgage(bond, settlement, discount, resets, outstanding, current_payment)
-            elif kind == 'mortgage':
+            elif amortizing:
                 result = value_mortgage(bond, settlement, discount)
             elif is_floating:
                 result = value_reset_bond(bond, settlement, discount, resets)
@@ -243,17 +252,18 @@ def run_workflow(payload, scenario=None):
                 if curve is not None and curve.as_of < settlement:
                     days = (settlement - curve.as_of).days
                     warnings.append(f'{role} curve snapshot is {days} calendar days before settlement; factors normalized to settlement')
-            if kind == 'mortgage':
-                warnings.append('Contractual mortgage; no prepayment or credit losses. ' +
+            if amortizing:
+                warnings.append(('No prepayment' if bond.prepayment_model == 'none' else 'Prospective CPR; payment reduction, contractual maturity retained') + '; no credit losses. ' +
                                 ('Current outstanding balance is supplied; annuity instalments recast at future resets; linear principal = outstanding / remaining payments' if is_floating
                                  else 'Fixed-rate scheduled past payments assumed paid'))
                 if discount_id != 'FLAT OVERRIDE' and catalog[discount_id].get('curve_type') == 'sovereign':
-                    warnings.append('Sovereign benchmark basis, not a mortgage market quote; optional discount spread is user-supplied')
+                    warnings.append('Sovereign benchmark basis, not a loan market quote; optional discount spread is user-supplied')
             if is_floating and index_mode == 'curve':
                 warnings.append('Explicit curve-implied reference; not a quoted EURIBOR fixing. Source: ' + projection_source)
             if is_floating and not index:
                 warnings.append('Unspecified index accepted for legacy flat input')
             summaries.append({**identity, 'Status': 'OK', 'Type': kind,
+                **({'Loan category': loan_type} if kind == 'loan' else {}),
                 'Rate type': 'floating' if is_floating else 'fixed',
                 **({'Discount shocked': hasattr(discount, 'scenario'), 'Projection shocked': hasattr(projection, 'scenario')} if scenario else {}),
                 'Index': index, 'Index mode': index_mode if is_floating else '',
@@ -266,7 +276,11 @@ def run_workflow(payload, scenario=None):
                     'Next payment': result.cashflows[0].coupon + result.cashflows[0].principal,
                     'Remaining payments': len(result.cashflows), 'Discount spread bps': bond.discount_spread_bps,
                     'Interest convention': 'Nominal annual / frequency; accrual prorated by elapsed days in period',
-                    'Fixed rate until': '' if is_floating else str(maturity)} if kind == 'mortgage' else {}),
+                    'Prepayment model': bond.prepayment_model, 'Annual CPR %': bond.cpr,
+                    'CPR formula': bond.cpr_formula if bond.prepayment_model == 'formula' else '',
+                    'Total prepayment': sum(f.prepayment for f in result.cashflows),
+                    'Prepayment treatment': 'Reduce payments; retain contractual maturity',
+                    'Fixed rate until': '' if is_floating else str(maturity)} if amortizing else {}),
                 'Dirty PV': result.dirty_pv,
                 'Accrued interest': result.accrued_interest, 'Clean PV': result.clean_pv,
                 'Dirty price / 100': result.dirty_price_per_100,
@@ -279,7 +293,7 @@ def run_workflow(payload, scenario=None):
                 'Projection curve source': projection_source,
                 'Warnings': '; '.join(warnings), 'Error': ''})
             for f in result.cashflows:
-                rate_source = 'Fixed mortgage rate' if kind == 'mortgage' else 'Fixed coupon' if kind == 'fixed' else 'Zero coupon'
+                rate_source = ('Fixed loan rate' if kind == 'loan' else 'Fixed mortgage rate') if amortizing else 'Fixed coupon' if kind == 'fixed' else 'Zero coupon'
                 q = resets.at(f.start) if resets else None
                 if q:
                     rate_source = q.source
@@ -304,14 +318,19 @@ def run_workflow(payload, scenario=None):
                     'Projection end DF': q.end_df if q and q.end_df is not None else '',
                     'Projection curve': projection_id,
                     'Accrued contribution': (f.coupon * (settlement-f.start).days / (f.payment-f.start).days
-                                              if kind == 'mortgage' else bond.notional*f.rate*year_fraction(f.start,settlement,basis))
+                                              if amortizing else bond.notional*f.rate*year_fraction(f.start,settlement,basis))
                                              if f.start < settlement < f.payment else 0,
-                    'Discount spread bps': bond.discount_spread_bps if kind == 'mortgage' else 0,
+                    'Discount spread bps': bond.discount_spread_bps if amortizing else 0,
                     **({'Opening balance': f.opening_balance, 'Closing balance': f.closing_balance,
-                        'Discount spread bps': bond.discount_spread_bps} if kind == 'mortgage' else {})})
+                        'Scheduled principal': f.scheduled_principal, 'Prepayment': f.prepayment,
+                        'Annual CPR %': f.cpr * 100, 'Period prepayment rate %': f.smm * 100,
+                        'Prepayment exposure years': f.prepayment_exposure,
+                        'Discount spread bps': bond.discount_spread_bps} if amortizing else {})})
             cashflows.extend(row_flows)
         except (ValueError, TypeError, OverflowError, ZeroDivisionError, KeyError) as error:
             message = str(error)
+            if kind == 'loan':
+                message = message.replace('Mortgage', 'Loan').replace('mortgage', 'loan')
             errors.append({**identity, 'Error': message})
             summaries.append({**identity, 'Status': 'ERROR', 'Error': message})
     return {'summary': summaries, 'cashflows': cashflows, 'errors': errors, 'inputs': inputs,
