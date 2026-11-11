@@ -116,3 +116,19 @@ principal-split Excel audit. Custom equation output is captured, not independent
 translated into Excel. Input exports preserve the model and equation; changing either
 invalidates prior results. Each scenario reevaluates the equation, allowing rate incentive.
 AI/chatbot document-to-model generation is outside this first manual-model release.
+
+
+## Consumer and commercial loans (v3.3)
+
+Select **Loan** in the common entry form, with `loan_type` = `consumer`,
+`commercial` or `other`. Excel rows use `kind=loan`; `consumer loan`,
+`commercial loan` and `credit` are also accepted. The product remains separate
+from `kind=mortgage` in inputs, summaries and exports, while sharing the tested
+amortization engine. Legacy mortgage workbook headings remain importable.
+
+Loans support fixed or floating rates, annuity, linear and interest-only repayment,
+current outstanding and instalment for seasoned floating loans, flat or dated
+curves, interest-rate scenarios, per-position CPR/equations and Excel audit exports.
+The existing EUR-only, regular-period and maximum 50-year limits apply. No drawdowns,
+payment holidays, irregular instalments, commissions, taxes or Monte Carlo paths
+are introduced. Mortgage Monte Carlo development remains a separate future stage.

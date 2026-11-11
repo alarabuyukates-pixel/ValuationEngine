@@ -73,6 +73,23 @@ const root=path.resolve(__dirname,'..');
  // Native Excel percentage CPR is normalized to annual percentage points.
  const cprSheet=w.XLSX.utils.aoa_to_sheet([['Type','Annual CPR (%)'],['mortgage',.06]]);cprSheet.B2.z='0.00%';
  const cprBook=w.XLSX.utils.book_new();w.XLSX.utils.book_append_sheet(cprBook,cprSheet,'Positions');w.testLoad(cprBook);assert.equal(w.testNormalize()[0].cpr,6);
+ // Separate consumer/commercial loan entry, editing, CPR and audit persistence.
+ $('sample-btn').click();$('apply-import').click();
+ for(const [name,category] of [['MORTGAGE-FIXED','consumer'],['MORTGAGE-FLOAT','commercial']]){
+ const option=[...$('portfolio-select').options].find(o=>o.textContent.startsWith(name));
+ $('portfolio-select').value=option.value;$('edit-position').click();assert.equal($('field-loan_type').hidden,true);
+ $('edit-product').value='loan';$('edit-product').onchange();assert.equal($('field-loan_type').hidden,false);
+ $('edit-loan_type').value=category;$('edit-prepayment_model').value='cpr';$('edit-prepayment_model').onchange();$('edit-cpr').value='6';
+ $('position-form').onsubmit({preventDefault(){}});
+ }
+ await $('run-btn').onclick();assert.equal($('metric-errors').textContent,'0',$('notice').textContent);
+ $('export-btn').click();const loanSummaries=w.XLSX.utils.sheet_to_json(saved.wb.Sheets.Summary).filter(x=>x.Type==='loan');
+ assert.equal(loanSummaries.length,2);assert.equal(loanSummaries[0]['Loan category'],'consumer');assert.equal(loanSummaries[1]['Loan category'],'commercial');
+ for(const summary of loanSummaries){$('validation-select').value=String(summary['Source row']);$('validation-export').click();assert.ok(saved.wb.Sheets['Prepayment audit']);assert.ok(w.XLSX.utils.sheet_to_json(saved.wb.Sheets.Checks).every(x=>x.Result==='PASS'));assert.ok(w.XLSX.utils.sheet_to_json(saved.wb.Sheets['Prepayment checks']).every(x=>x.Result==='PASS'));}
+ $('download-inputs').click();w.testLoad(saved.wb);const loanInputs=w.testNormalize().filter(x=>x.kind==='loan');assert.equal(loanInputs.length,2);assert.equal(loanInputs[1].loan_type,'commercial');
+ $('apply-import').click();await $('run-btn').onclick();assert.equal($('metric-errors').textContent,'0',$('notice').textContent);
+ const loanOption=[...$('portfolio-select').options].find(o=>o.textContent.startsWith('MORTGAGE-FLOAT'));$('portfolio-select').value=loanOption.value;$('edit-position').click();assert.equal($('edit-product').value,'loan');assert.equal($('edit-loan_type').value,'commercial');assert.equal($('edit-prepayment_model').value,'cpr');
+ console.log('Loan integration passed: separate product/category, fixed/floating CPR valuation, audit checks, input round trip and editor identity.');
  console.log('Prepayment integration passed: manual CPR/formula, real Pyodide repricing, Excel round trips, CPR audit formulas, tamper detection, row errors and percentage normalization.');
  console.log('Scenario integration passed: multi-select, parallel/twist, independent repricing, scenario Excel audit, stale results and invalid definitions.');
  console.log('UI integration passed: unified import, 5-product valuation, reset audit formulas, isolated errors, round-trip Excel, editing, deletion, percentage/date normalization.');dom.window.close();
