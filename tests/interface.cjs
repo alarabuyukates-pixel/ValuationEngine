@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..');
 (async()=>{
  const {loadPyodide}=await import(path.join(root,'dist/vendor/pyodide/pyodide.mjs'));
  const py=await loadPyodide();
- for(const f of ['bond_engine.py','mortgage_engine.py','rate_projection.py','scenario_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+f,fs.readFileSync(path.join(root,'dist',f),'utf8'));
+ for(const f of ['bond_engine.py', 'deposit_engine.py','mortgage_engine.py','rate_projection.py','scenario_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+f,fs.readFileSync(path.join(root,'dist',f),'utf8'));
  await py.runPythonAsync('from workflow import run_json');
  const dom=new JSDOM(fs.readFileSync(path.join(root,'dist/index.html'),'utf8'),{url:'http://localhost/',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window,d=w.document,$=id=>d.getElementById(id);
@@ -89,6 +89,37 @@ const root=path.resolve(__dirname,'..');
  $('download-inputs').click();w.testLoad(saved.wb);const loanInputs=w.testNormalize().filter(x=>x.kind==='loan');assert.equal(loanInputs.length,2);assert.equal(loanInputs[1].loan_type,'commercial');
  $('apply-import').click();await $('run-btn').onclick();assert.equal($('metric-errors').textContent,'0',$('notice').textContent);
  const loanOption=[...$('portfolio-select').options].find(o=>o.textContent.startsWith('MORTGAGE-FLOAT'));$('portfolio-select').value=loanOption.value;$('edit-position').click();assert.equal($('edit-product').value,'loan');assert.equal($('edit-loan_type').value,'commercial');assert.equal($('edit-prepayment_model').value,'cpr');
+ // Time deposits: arbitrary tenors, default bank liabilities and real engine exports.
+ $('sample-btn').click();$('apply-import').click();
+ $('add-position').click();$('edit-product').value='deposit';$('edit-product').onchange();
+ assert.equal($('deposit-tenor').hidden,false);assert.equal($('edit-rate-label').hidden,true);
+ assert.equal($('field-deposit_side').hidden,false);assert.equal($('field-prepayment_model').hidden,true);
+ assert.equal($('edit-deposit_side').value,'liability');assert.equal($('field-frequency').hidden,true);
+ $('edit-bond_id').value='TD-EOM';$('edit-issue').value='2024-01-31';$('edit-settlement').value='2024-02-15';
+ $('deposit-term').value='1';$('deposit-term-unit').value='months';$('deposit-set-maturity').click();assert.equal($('edit-maturity').value,'2024-02-29');
+ $('deposit-term').value='32';$('deposit-term-unit').value='days';$('deposit-set-maturity').click();assert.equal($('edit-maturity').value,'2024-03-03');
+ $('edit-day_count').value='ACT/365F';$('edit-coupon').value='4';$('position-form').onsubmit({preventDefault(){}});
+ $('add-position').click();$('edit-product').value='deposit';$('edit-product').onchange();
+ $('edit-bond_id').value='TD-PERIODIC';$('edit-issue').value='2024-01-31';$('edit-settlement').value='2024-02-15';
+ $('deposit-term').value='12';$('deposit-term-unit').value='months';$('deposit-set-maturity').click();assert.equal($('edit-maturity').value,'2025-01-31');
+ $('edit-deposit_payout').value='periodic';$('edit-deposit_payout').onchange();assert.equal($('field-frequency').hidden,false);
+ $('edit-frequency').value='12';$('edit-day_count').value='ACT/365F';$('edit-coupon').value='4';$('position-form').onsubmit({preventDefault(){}});
+ await $('run-btn').onclick();assert.equal($('metric-valued').textContent,'7',$('notice').textContent);assert.equal($('metric-errors').textContent,'0');
+ $('export-btn').click();const tdBook=saved.wb,tdSummaries=w.XLSX.utils.sheet_to_json(tdBook.Sheets.Summary).filter(x=>x.Type==='deposit');
+ assert.equal(tdSummaries.length,2);assert.equal(tdSummaries[0]['Term days'],32);assert.equal(tdSummaries[0]['Position side'],'liability');assert.ok(tdSummaries.every(x=>x['Dirty PV']<0&&x['Total principal']===-100000));
+ const tdFlows=w.XLSX.utils.sheet_to_json(tdBook.Sheets['Cash flows']).filter(x=>x['Bond ID']==='TD-EOM');assert.equal(tdFlows.length,1);assert.equal(tdFlows[0].Principal,-100000);assert.ok(Math.abs(tdFlows[0].Interest+100000*.04*32/365)<1e-8);
+ for(const summary of tdSummaries){$('validation-select').value=String(summary['Source row']);$('validation-export').click();assert.ok(w.XLSX.utils.sheet_to_json(saved.wb.Sheets.Checks).every(x=>x.Result==='PASS'));assert.equal(saved.wb.Sheets.Checks.B5.v,-100000);assert.equal(saved.wb.Sheets['Cash flow audit'].C2.v,-100000);}
+ const tdBytes=w.XLSX.write(saved.wb,{type:'buffer',bookType:'xlsx'});assert.ok(w.XLSX.read(tdBytes,{type:'buffer',cellFormula:true}).Sheets.Checks.C2.f.includes('SUM'));
+ const tdTampered=w.XLSX.utils.sheet_to_json(tdBook.Sheets['Cash flows']);tdTampered.find(x=>x['Bond ID']==='TD-EOM').Interest+=20;
+ const tdAudit=w.ValuationExport.validation({summary:tdSummaries,cashflows:tdTampered,errors:[],curves:[],sourceInputs:[],runInfo:{}},tdSummaries[0]['Source row']);assert.equal(tdAudit.Sheets.Checks.E6.v,'FAIL');
+ $('download-inputs').click();w.testLoad(saved.wb);const tdInputs=w.testNormalize().filter(x=>x.kind==='deposit');assert.equal(tdInputs.length,2);assert.equal(tdInputs[1].deposit_payout,'periodic');assert.equal(tdInputs[1].deposit_side,'liability');assert.equal(tdInputs[0].maturity,'2024-03-03');
+ $('apply-import').click();await $('run-btn').onclick();assert.equal($('metric-errors').textContent,'0',$('notice').textContent);
+ const tdOption=[...$('portfolio-select').options].find(o=>o.textContent.startsWith('TD-EOM'));$('portfolio-select').value=tdOption.value;$('edit-position').click();assert.equal($('edit-product').value,'deposit');assert.equal($('edit-deposit_side').value,'liability');assert.equal($('edit-maturity').value,'2024-03-03');
+ $('edit-deposit_side').value='asset';$('position-form').onsubmit({preventDefault(){}});assert.equal($('export-btn').disabled,true);await $('run-btn').onclick();$('validation-select').value=tdOption.value;$('validation-export').click();assert.ok(w.XLSX.utils.sheet_to_json(saved.wb.Sheets.Checks).every(x=>x.Result==='PASS'));assert.ok(w.XLSX.utils.sheet_to_json(saved.wb.Sheets.Summary)[0]['Dirty PV']>0);
+ // Term helper month-end and leap-year behavior, plus invalid input isolation.
+ $('edit-position').click();$('edit-issue').value='2024-02-29';$('deposit-term').value='12';$('deposit-term-unit').value='months';$('deposit-set-maturity').click();assert.equal($('edit-maturity').value,'2025-02-28');
+ $('deposit-term').value='0';$('deposit-set-maturity').click();assert.match($('notice').textContent,/positive whole number/);assert.equal($('edit-maturity').value,'2025-02-28');
+ console.log('Time deposit integration passed: 32-day/calendar-month terms, EOM/leap helper, bank liability signs, maturity/periodic payments, real scenario runs, Excel audit/tamper detection and input persistence.');
  console.log('Loan integration passed: separate product/category, fixed/floating CPR valuation, audit checks, input round trip and editor identity.');
  console.log('Prepayment integration passed: manual CPR/formula, real Pyodide repricing, Excel round trips, CPR audit formulas, tamper detection, row errors and percentage normalization.');
  console.log('Scenario integration passed: multi-select, parallel/twist, independent repricing, scenario Excel audit, stale results and invalid definitions.');

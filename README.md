@@ -2,7 +2,7 @@
 
 [Open the public calculator](https://alarabuyukates-pixel.github.io/ValuationEngine/)
 
-One workflow for fixed, floating and zero-coupon bonds and fixed or floating mortgages. All positions use EUR. Other explicit currencies are rejected. Calculations run locally in the browser using Python/Pyodide; portfolio workbooks are not uploaded. Positions last for the browser session: download current inputs before reloading.
+One workflow for fixed, floating and zero-coupon bonds, fixed or floating loans/mortgages, and fixed-rate time deposits. All positions use EUR. Other explicit currencies are rejected. Calculations run locally in the browser using Python/Pyodide; portfolio workbooks are not uploaded. Positions last for the browser session: download current inputs before reloading.
 
 ## Workflow
 
@@ -31,7 +31,7 @@ Repayment: annuity, linear or interest-only. Mortgage schedules use regular peri
 
 Fixed loans reconstruct balances from original principal assuming past scheduled payments were paid. Seasoned floating loans require **current outstanding principal**. Seasoned floating annuities also require **current contractual instalment**; future resets recalculate that instalment using remaining balance and term. Floating linear loans amortize current outstanding evenly over remaining payments. Negative amortization is rejected. Prices per 100 use current outstanding.
 
-Mortgage discount spread is in **basis points**, separate from contractual floating spread. Effective discount factor is `DF(payment)/DF(settlement) × exp(-discount_spread_bps/10000 × ACT/365F)`. No credit loss, arrears, fees, caps/floors or fixed-then-floating hybrid is modeled. Positions represent positive lender assets; liability signs, net balance-sheet aggregation and regulatory interest-rate-risk measures remain future work.
+Mortgage discount spread is in **basis points**, separate from contractual floating spread. Effective discount factor is `DF(payment)/DF(settlement) × exp(-discount_spread_bps/10000 × ACT/365F)`. No credit loss, arrears, fees, caps/floors or fixed-then-floating hybrid is modeled. Loans and mortgages represent positive lender assets. Time deposits have explicit liability or asset signs, and scenario totals sum signed EUR values at a common settlement date. Regulatory interest-rate-risk measures remain future work.
 
 ## Product validation Excel
 
@@ -132,3 +132,32 @@ curves, interest-rate scenarios, per-position CPR/equations and Excel audit expo
 The existing EUR-only, regular-period and maximum 50-year limits apply. No drawdowns,
 payment holidays, irregular instalments, commissions, taxes or Monte Carlo paths
 are introduced. Mortgage Monte Carlo development remains a separate future stage.
+
+
+## Time deposits (v3.4)
+
+Use `kind=deposit` (aliases: `time deposit`, `time_deposit`, `term deposit`, `td`).
+Each position has its own opening (`issue`), maturity, principal (`notional`), fixed
+annual percentage rate (`coupon`), day count and discount curve. Exact maturity
+supports irregular terms such as 7, 32 or 92 days as well as calendar months.
+The editor includes a day/month term helper that preserves month-end anchoring;
+exported inputs store the actual dates, so no hidden tenor overrides are applied.
+
+`deposit_payout=maturity` (default) pays simple interest and principal together at
+maturity; payment frequency is ignored. `periodic` pays simple interest at the
+chosen frequency, with all principal at maturity. Periodic schedules are anchored
+backward from maturity and allow a short first period. Interest = principal × annual
+rate × day-count fraction; paid interest is not capitalized or reinvested.
+
+`deposit_side=liability` (default bank view) gives negative interest, principal,
+accrued interest and PV; `asset` gives positive holder receipts. Principal inputs
+remain positive; signs are applied by the engine and retained in cash-flow and
+Excel arithmetic audits. Scenario totals are signed EUR sums at a common settlement
+date. Initial funding is not a future cash flow: only existing-deposit remaining
+payments are valued, with opening <= settlement < maturity. Payments on settlement
+are excluded and accrued interest resets after periodic payments.
+
+Negative fixed rates are permitted if the per-period principal-plus-interest
+amount remains positive. Contractual cash flows stay fixed under discount shocks;
+projection-only scenarios have no effect. No rollover, early withdrawal, taxes,
+fees, capitalization or forward-start deposits. EUR only, maximum term 50 years.

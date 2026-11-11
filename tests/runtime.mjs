@@ -3,7 +3,7 @@ import {loadPyodide} from '../dist/vendor/pyodide/pyodide.mjs';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const py = await loadPyodide();
-for(const file of ['bond_engine.py','mortgage_engine.py','rate_projection.py','scenario_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+file,readFileSync(new URL('../dist/'+file,import.meta.url),'utf8'));
+for(const file of ['bond_engine.py', 'deposit_engine.py','mortgage_engine.py','rate_projection.py','scenario_engine.py','workflow.py'])py.FS.writeFile('/home/pyodide/'+file,readFileSync(new URL('../dist/'+file,import.meta.url),'utf8'));
 const payload=[{_row:2,bond_id:'FIXED',kind:'fixed',currency:'EUR',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'30E/360',coupon:5,discount:4},
 {_row:3,bond_id:'FLOAT',kind:'floating',currency:'EUR',issue:'2026-01-01',maturity:'2028-01-01',settlement:'2026-04-01',notional:100000,frequency:2,day_count:'ACT/360',spread:.5,discount:4,projection:3.5,fixing:3},
 {_row:4,bond_id:'BAD',kind:'fixed'}];
@@ -40,3 +40,15 @@ assert.equal(mortgage.cashflows.at(-1)['Closing balance'],0);
 assert.ok(mortgage.summary[0]['Outstanding principal']<300000);
 assert.ok(Math.abs(mortgage.cashflows.reduce((s,f)=>s+f.Principal,0)-mortgage.summary[0]['Outstanding principal'])<1e-6);
 console.log('WebAssembly mortgage workflow passed: balances, spread, settlement and unsupported reset.');
+
+// Existing deposits: irregular maturity, periodic payments and explicit bank signs.
+py.globals.set('payload',JSON.stringify({bonds:[
+{_row:10,bond_id:'TD-32D',kind:'deposit',issue:'2026-01-01',settlement:'2026-01-15',maturity:'2026-02-02',notional:100000,coupon:4,day_count:'ACT/365F',discount:3},
+{_row:11,bond_id:'TD-MONTHLY',kind:'deposit',issue:'2026-01-01',settlement:'2026-01-15',maturity:'2027-01-01',notional:100000,coupon:4,day_count:'ACT/365F',discount:3,deposit_payout:'periodic',frequency:12}],curves:[]}));
+const deposits=JSON.parse(await py.runPythonAsync('run_json(payload)'));
+assert.equal(deposits.errors.length,0);
+assert.ok(deposits.summary.every(s=>s['Dirty PV']<0&&s['Total principal']===-100000));
+assert.equal(deposits.cashflows.filter(f=>f['Source row']===10).length,1);
+assert.equal(deposits.cashflows.filter(f=>f['Source row']===11).length,12);
+assert.ok(Math.abs(deposits.cashflows[0].Interest+100000*.04*32/365)<1e-8);
+console.log('WebAssembly time deposits passed: 32-day maturity, monthly interest, accrued and bank liability signs.');
